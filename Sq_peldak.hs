@@ -3,7 +3,7 @@ import Prelude (undefined)
 
 -- mods.funs
 q1 :: [Function]
-q1 = [ f | m <- modules, f <- functions m ]
+q1 = [f | m <- modules, f <- functions m ]
 
 -- mods[name=mymod].funs[name=f].params.type
 q2 :: [Type]
@@ -22,7 +22,8 @@ q4 = [f | m <- modules, f <- functions m, exported f, arity f == 0]
 
 -- @file.funs.calls 
 q5 :: [Function]
-q5 = union [calls f | f <- functions atFile]
+q5 = [c | f <- functions atFile
+        , c <- calls f]
 
 -- mods[name ~ "[^test].*" ]
 q6 :: [Module]
@@ -34,8 +35,9 @@ q7 = undefined
 
 -- mods[name=io].funs[name=format].refs
 q8 :: [Expression]
-q8 = union [references f | m <- modules, name m == "io", 
-                            f <- functions m, name f == "format"]
+q8 = [r | m <- modules, name m == "io"
+        , f <- functions m, name f == "format"
+        , r <- references f]
 
 -- @expr.origin ???
 q9 = undefined
@@ -45,9 +47,10 @@ q9 = undefined
 
 -- mods.records[name=p].fields[name=name].refs
 q10 :: [Expression]
-q10 = union [references f | m <- modules,
-                             r <- records m, name r == "p",
-                             f <- fields r, name f == "name"]
+q10 = [r | m <- modules
+         , r <- records m, name r == "p"
+         , f <- fields r, name f == "name"
+         , r <- references f]
 
 -- mods[line_of_code > 400]
 q11 :: [Module]
@@ -118,6 +121,6 @@ q26 = [name f | m <- modules, name m == "m1",
 
 -- (mods[name=m1] U mods[name=m2]).funs
 q27 :: [Function]
-q27 = union [(functions m1) `u` (functions m2)
-           | m1 <- modules, name m1 == "m1"
-           , m2 <- modules, name m2 == "m2" ]
+q27 = [f | m1 <- modules, name m1 == "m1"
+         , m2 <- modules, name m2 == "m2"
+         , f <- (functions m1) `u` (functions m2)]

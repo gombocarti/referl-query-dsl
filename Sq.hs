@@ -43,8 +43,8 @@ not = Prelude.not
 null :: [a] -> Bool
 null = Prelude.null
 
-union :: [[a]] -> [a]
-union = concat
+-- union :: [[a]] -> [a]
+-- union = concat
 
 u :: Eq a => [a] -> [a] -> [a]
 u = Data.List.union
@@ -170,7 +170,7 @@ arity :: Function -> Int
 arity = length . parameters
 
 calls :: Function -> [Function]
-calls = undefined
+calls = fcalls . getF
 
 data FunctionType = NonRecursive 
                   | Recursive
@@ -254,6 +254,7 @@ a = F $ DF { fname = "a"
            , fparameters = [x]
            , fcalls = [b]
            , floc = 1
+           , frecursive = NonRecursive
            }
     where
       body = E $ DE { etype = FuncCall
@@ -275,6 +276,7 @@ b = F $ DF { fname = "b"
            , fparameters = [y]
            , fcalls = []
            , floc = 2
+           , frecursive = NonRecursive
            }
     where
       body = E $ DE { etype = FuncCall
@@ -324,6 +326,7 @@ f = F $ DF { fname = "f"
            , fexported = False
            , fcalls = []
            , floc = 2
+           , frecursive = NonRecursive
            }
 
 root :: DbRoot
