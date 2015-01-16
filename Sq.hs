@@ -2,10 +2,13 @@
 
 module Sq where
 
-import Data.List (union, intersect)
+import Data.List (intersect)
+import qualified Data.List
 import Foreign.Erlang (ErlType (..))
-import Prelude hiding (elem)
+import Prelude hiding (elem, (==), not, (>), Int, null)
 import qualified Prelude
+import qualified Text.Regex.Posix ((=~))
+
 -- import qualified Data.Set as Set (Set)
 
 {-
@@ -24,8 +27,31 @@ name (Module m) = mname m
 functions :: Node -> [Node]
 functions (Module m) = map FunDbModulection $ mfunctions m
 
-  -}        
+  -}
 
+type Int = Prelude.Int
+    
+(==) :: Eq a => a -> a -> Bool
+(==) = (Prelude.==)
+
+(>) :: Ord a => a -> a -> Bool
+(>) = (Prelude.>)
+
+not :: Bool -> Bool
+not = Prelude.not
+
+null :: [a] -> Bool
+null = Prelude.null
+
+union :: [[a]] -> [a]
+union = concat
+
+u :: Eq a => [a] -> [a] -> [a]
+u = Data.List.union
+
+(=~) :: Name -> String -> Bool
+(=~) = (Text.Regex.Posix.=~)
+        
 newtype Module = M { getM :: DbModule }
     deriving (Show, Eq)
 

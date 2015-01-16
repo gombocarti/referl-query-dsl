@@ -1,9 +1,5 @@
 import Sq
-import Prelude hiding (elem)
-import Control.Monad (guard)
-import Text.Regex.Posix
-import Data.List (union)
-
+import Prelude (undefined)
 
 -- mods.funs
 q1 :: [Function]
@@ -26,11 +22,11 @@ q4 = [f | m <- modules, f <- functions m, exported f, arity f == 0]
 
 -- @file.funs.calls 
 q5 :: [Function]
-q5 = concat [calls f | f <- functions atFile]
+q5 = union [calls f | f <- functions atFile]
 
 -- mods[name ~ "[^test].*" ]
 q6 :: [Module]
-q6 = [m | m <- modules, not $ name m =~ "^test"]
+q6 = [m | m <- modules, not (name m =~ "^test")]
 
 -- mods.funs(.calls)+
 q7 :: [Function]
@@ -38,7 +34,7 @@ q7 = undefined
 
 -- mods[name=io].funs[name=format].refs
 q8 :: [Expression]
-q8 = concat [references f | m <- modules, name m == "io", 
+q8 = union [references f | m <- modules, name m == "io", 
                             f <- functions m, name f == "format"]
 
 -- @expr.origin ???
@@ -49,7 +45,7 @@ q9 = undefined
 
 -- mods.records[name=p].fields[name=name].refs
 q10 :: [Expression]
-q10 = concat [references f | m <- modules,
+q10 = union [references f | m <- modules,
                              r <- records m, name r == "p",
                              f <- fields r, name f == "name"]
 
@@ -118,10 +114,10 @@ q25 = [f | m <- modules, f <- functions m,
 -- mods[name=m1](.funs U .funs.calls).name
 q26 :: [Name]
 q26 = [name f | m <- modules, name m == "m1", 
-                f <- (functions m `union` [c | f <- functions m , c <- calls f]) ]
+                f <- (functions m `u` [c | f <- functions m , c <- calls f]) ]
 
 -- (mods[name=m1] U mods[name=m2]).funs
 q27 :: [Function]
-q27 = concat [(functions m1) `union` (functions m2)
+q27 = union [(functions m1) `u` (functions m2)
            | m1 <- modules, name m1 == "m1"
            , m2 <- modules, name m2 == "m2" ]
