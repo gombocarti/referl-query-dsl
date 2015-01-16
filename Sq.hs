@@ -145,11 +145,11 @@ class Typed a where
 
 instance Typed Expression where
     type ValueType Expression = ExprType
-    typeOf e = undefined
+    typeOf = etype . getE
 
 instance Typed Variable where
     type ValueType Variable = Type
-    typeOf v = undefined
+    typeOf = vtype . getV
 
 body :: Expression -> String
 body = ebody . getE
@@ -361,7 +361,7 @@ instance Eq DbFunction where
     f1 == f2 = fmodule f1 == fmodule f2 && fname f1 == fname f2 && arity (F f1) == arity (F f2)
 
 instance Show DbFunction where
-    show f = "function " ++ fname f
+    show f = "function " ++ (name . fmodule $ f) ++ ":" ++ fname f ++ "/" ++ (show . arity . F $ f)
 
 data DbExpression = DE { etype :: ExprType
                        , ebody :: String
