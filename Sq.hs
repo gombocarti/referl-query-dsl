@@ -32,128 +32,114 @@ u = Data.List.union
 (=~) :: Name -> String -> Bool
 (=~) = (Text.Regex.Posix.=~)
 
-        
-newtype Module = M { getM :: DbModule }
-    deriving (Show, Eq)
-
-newtype Function = F { getF ::  DbFunction }
-    deriving (Show, Eq)
-
-newtype Expression = E { getE :: DbExpression }
-    deriving Show
-
-newtype Variable = V { getV :: DbVariable }
-
-newtype Record = R { getR :: DbRecord }
-
 type Name = String
 
 class Named a where
     name :: a -> Name
 
-instance Named Module where
-    name (M m) = mname m
+instance Named DbModule where
+    name = mname
 
-instance Named Function where
-    name (F f) = fname f
+instance Named DbFunction where
+    name = fname
 
-instance Named Variable where
-    name (V v) = vname v
+instance Named DbVariable where
+    name = vname
 
-instance Named Record where
-    name = rname . getR
+instance Named DbRecord where
+    name = rname
 
-loaded :: Module -> Bool
+loaded :: DbModule -> Bool
 loaded = undefined
 
-functions :: Module -> [Function]
-functions (M m) = mfunctions m
+functions :: DbModule -> [DbFunction]
+functions = mfunctions 
 
-records :: Module -> [Record]
-records (M m) = mrecords m
+records :: DbModule -> [DbRecord]
+records = mrecords
 
 class MultiLine a where
     loc :: a -> Int
 
-instance MultiLine Module where 
-    loc (M m) = mloc m
+instance MultiLine DbModule where 
+    loc = mloc
 
-instance MultiLine Function where
-    loc (F f) = floc f
+instance MultiLine DbFunction where
+    loc = floc
 
-moduleOf :: Function -> Module
-moduleOf (F f) = fmodule f
+moduleOf :: DbFunction -> DbModule
+moduleOf = fmodule
 
-parameters :: Function -> [Variable]
-parameters (F f) = fparameters f
+parameters :: DbFunction -> [DbVariable]
+parameters = fparameters
 
 class Referencable a where
-    references :: a -> [Expression]
+    references :: a -> [DbExpression]
 
-instance Referencable Function where
-    references (F f) = undefined
+instance Referencable DbFunction where
+    references = undefined
 
-instance Referencable Variable where
-    references (V v) = vreferences v
+instance Referencable DbVariable where
+    references = vreferences
 
-instance Referencable Record where
-    references (R r) = rreferences r
+instance Referencable DbRecord where
+    references = rreferences
 
-returns :: Function -> Type
+returns :: DbFunction -> Type
 returns = undefined
 
-exported :: Function -> Bool
-exported (F f) = fexported f
+exported :: DbFunction -> Bool
+exported = fexported
 
-recursivity :: Function -> FunctionType
-recursivity = frecursive . getF
+recursivity :: DbFunction -> DbFunctionType
+recursivity = frecursive
 
-class MultiExpression a where
-    expressions :: a -> [Expression]
+class MultiDbExpression a where
+    expressions :: a -> [DbExpression]
 
 class VariableDefs a where
-    variables :: a -> [Variable]
+    variables :: a -> [DbVariable]
 
-instance VariableDefs Function where
-    variables (F f) = concatMap (evariables . getE) $ fexpressions f
+instance VariableDefs DbFunction where
+    variables  = concatMap evariables . fexpressions 
 
-instance VariableDefs Expression where
-    variables (E e) = evariables e
+instance VariableDefs DbExpression where
+    variables = evariables
 
 class Typed a where
     type ValueType a
     typeOf :: a -> ValueType a
 
-instance Typed Expression where
-    type ValueType Expression = ExprType
-    typeOf = etype . getE
+instance Typed DbExpression where
+    type ValueType DbExpression = ExprType
+    typeOf = etype
 
-instance Typed Variable where
-    type ValueType Variable = Type
-    typeOf = vtype . getV
+instance Typed DbVariable where
+    type ValueType DbVariable = Type
+    typeOf = vtype
 
-body :: Expression -> String
-body = ebody . getE
+body :: DbExpression -> String
+body = ebody
 
-function :: Expression -> Function
-function = efunction . getE
+function :: DbExpression -> DbFunction
+function = efunction
 
-bound :: Variable -> Either Expression Function
+bound :: DbVariable -> Either DbExpression DbFunction
 bound = undefined
 
-fields :: Record -> [Variable]
-fields = rfields . getR
+fields :: DbRecord -> [DbVariable]
+fields = rfields
 
-modulesOf :: Record -> [Module]
-modulesOf = rmodules . getR
+modulesOf :: DbRecord -> [DbModule]
+modulesOf = rmodules
 
-arity :: Function -> Int
+arity :: DbFunction -> Int
 arity = length . parameters
 
-calls :: Function -> [Function]
-calls = fcalls . getF
+calls :: DbFunction -> [DbFunction]
+calls = fcalls
 
-data FunctionType = NonRecursive 
+data DbFunctionType = NonRecursive 
                   | Recursive
                   | TailRecursive
                     deriving (Show, Eq)
@@ -185,139 +171,139 @@ all_in = subset
 elem :: Eq a => a -> [a] -> Bool
 elem = Prelude.elem
 
-modules :: [Module]
+modules :: [DbModule]
 modules = rootmodules root
 
-atFile :: Module
+atFile :: DbModule
 atFile = m1
 
-atFunction :: Function
+atFunction :: DbFunction
 atFunction = a
 
-m1 :: Module
-m1 = M $ DM { mname = "m1"
-            , mloc = 3
-            , mfunctions = [a, b]
-            , mrecords = []
+m1 :: DbModule
+m1 = DM { mname = "m1"
+        , mloc = 3
+        , mfunctions = [a, b]
+        , mrecords = []
+        }
+
+m2 :: DbModule
+m2 = DM { mname = "m2"
+        , mloc = 2
+        , mfunctions = [f]
+        , mrecords = [person]
+        }
+
+person :: DbRecord
+person = DR { rname = "p"
+            , rfields = [nameField, ageField]
+            , rmodules = [m2]
+            , rreferences = [newrecord]
             }
 
-m2 :: Module
-m2 = M $ DM { mname = "m2"
-            , mloc = 2
-            , mfunctions = [f]
-            , mrecords = [person]
-            }
+nameField :: DbVariable
+nameField = DV { vname = "name"
+               , vtype = String
+               , vreferences = [newrecord]
+               }
 
-person :: Record
-person = R $ DR { rname = "p"
-                , rfields = [nameField, ageField]
-                , rmodules = [m2]
-                , rreferences = [newrecord]
+ageField :: DbVariable
+ageField = DV { vname = "age"
+              , vtype = Int
+              , vreferences = [newrecord]
+              }
+
+a :: DbFunction
+a = DF { fname = "a"
+       , fmodule = m1
+       , fexpressions = [body]
+       , fexported = True
+       , fparameters = [x]
+       , fcalls = [b]
+       , floc = 1
+       , frecursive = NonRecursive
+       }
+    where
+      body = DE { etype = FuncCall
+                , ebody = "b(X + 2)."
+                , efunction = a
+                , evariables = [x]
                 }
 
-nameField :: Variable
-nameField = V $ DV { vname = "name"
-                   , vtype = String
-                   , vreferences = [newrecord]
-                   }
-
-ageField :: Variable
-ageField = V $ DV { vname = "age"
-                  , vtype = Int
-                  , vreferences = [newrecord]
-                  }
-
-a :: Function
-a = F $ DF { fname = "a"
-           , fmodule = m1
-           , fexpressions = [body]
-           , fexported = True
-           , fparameters = [x]
-           , fcalls = [b]
-           , floc = 1
-           , frecursive = NonRecursive
-           }
-    where
-      body = E $ DE { etype = FuncCall
-                    , ebody = "b(X + 2)."
-                    , efunction = a
-                    , evariables = [x]
-                    }
-
-      x = V $ DV { vname = "X"
-                 , vtype = Int
-                 , vreferences = [body]
-                 }
-
-b :: Function
-b = F $ DF { fname = "b"
-           , fmodule = m1
-           , fexpressions = [body]
-           , fexported = False
-           , fparameters = [y]
-           , fcalls = []
-           , floc = 2
-           , frecursive = NonRecursive
-           }
-    where
-      body = E $ DE { etype = FuncCall
-                    , ebody = "F = 2," ++ 
-                              "F * Y."
-                    , efunction = a
-                    , evariables = [y, z]
-                    }
-
-      y = V $ DV { vname = "Y"
-                 , vtype = Int
-                 , vreferences = [body]
-                 }
-
-      z = V $ DV { vname = "Z"
-                 , vtype = Int
-                 , vreferences = [body]
-                 }
-
-nameDef = E $ DE { etype = Plain
-                 , ebody = "Name = \"Géza\""
-                 , efunction = f
-                 , evariables = [nameVar]
-                 }
-
-newrecord = E $ DE { etype = Plain
-                   , ebody = "#p{name = Name, age = Age}"
-                   , efunction = f
-                   , evariables = [nameVar, age]
-                   }
-
-age = V $ DV { vname = "Age"
+      x = DV { vname = "X"
              , vtype = Int
-             , vreferences = [newrecord]
+             , vreferences = [body]
              }
 
-nameVar = V $ DV { vname = "Name"
-                 , vtype = String
-                 , vreferences = [nameDef, newrecord]
-                 }
+b :: DbFunction
+b = DF { fname = "b"
+       , fmodule = m1
+       , fexpressions = [body]
+       , fexported = False
+       , fparameters = [y]
+       , fcalls = []
+       , floc = 2
+       , frecursive = NonRecursive
+       }
+    where
+      body = DE { etype = FuncCall
+                , ebody = "F = 2," ++ 
+                          "F * Y."
+                , efunction = a
+                , evariables = [y, z]
+                }
 
-f :: Function
-f = F $ DF { fname = "f"
-           , fmodule = m2
-           , fexpressions = [nameDef, newrecord]
-           , fparameters = [age]
-           , fexported = False
-           , fcalls = []
-           , floc = 2
-           , frecursive = NonRecursive
-           }
+      y = DV { vname = "Y"
+             , vtype = Int
+             , vreferences = [body]
+             }
+
+      z = DV { vname = "Z"
+             , vtype = Int
+             , vreferences = [body]
+             }
+
+nameDef = DE { etype = Plain
+             , ebody = "Name = \"Géza\""
+             , efunction = f
+             , evariables = [nameVar]
+             }
+
+newrecord = DE { etype = Plain
+               , ebody = "#p{name = Name, age = Age}"
+               , efunction = f
+               , evariables = [nameVar, age]
+               }
+
+age = DV { vname = "Age"
+         , vtype = Int
+         , vreferences = [newrecord]
+         }
+
+nameVar = DV { vname = "Name"
+             , vtype = String
+             , vreferences = [nameDef, newrecord]
+             }
+
+f :: DbFunction
+f = DF { fname = "f"
+       , fmodule = m2
+       , fexpressions = [nameDef, newrecord]
+       , fparameters = [age]
+       , fexported = False
+       , fcalls = []
+       , floc = 2
+       , frecursive = NonRecursive
+       }
 
 root :: DbRoot
 root = DRoot [m1, m2]
 
-data DbRoot = DRoot { rootmodules :: [Module] }
+data DbRoot = DRoot { rootmodules :: [DbModule] }
 
-data DbModule = DM { mfunctions :: [Function] 
+data DbModule = DM { mfunctions :: [DbFunction] 
                    , mloc :: Int
-                   , mrecords :: [Record]
+                   , mrecords :: [DbRecord]
                    , mname :: Name
                    }
 instance Eq DbModule where
@@ -328,26 +314,26 @@ instance Show DbModule where
 
 data DbFunction =  DF
     { fname :: Name
-    , fmodule :: Module
-    , fexpressions :: [Expression]
-    --       , fvariables :: [Variable]
-    , fparameters :: [Variable]
+    , fmodule :: DbModule
+    , fexpressions :: [DbExpression]
+    --       , fvariables :: [DbVariable]
+    , fparameters :: [DbVariable]
     , fexported :: Bool
-    , fcalls :: [Function]
+    , fcalls :: [DbFunction]
     , floc :: Int
-    , frecursive :: FunctionType
+    , frecursive :: DbFunctionType
     }
                 
 instance Eq DbFunction where
-    f1 == f2 = fmodule f1 == fmodule f2 && fname f1 == fname f2 && arity (F f1) == arity (F f2)
+    f1 == f2 = fmodule f1 == fmodule f2 && fname f1 == fname f2 && arity f1 == arity f2
 
 instance Show DbFunction where
-    show f = "function " ++ (name . fmodule $ f) ++ ":" ++ fname f ++ "/" ++ (show . arity . F $ f)
+    show f = "function " ++ (name . fmodule $ f) ++ ":" ++ fname f ++ "/" ++ (show . arity $ f)
 
 data DbExpression = DE { etype :: ExprType
                        , ebody :: String
-                       , efunction :: Function
-                       , evariables :: [Variable]
+                       , efunction :: DbFunction
+                       , evariables :: [DbVariable]
                        }
 
 instance Show DbExpression where
@@ -355,11 +341,11 @@ instance Show DbExpression where
 
 data DbVariable = DV { vname :: Name
                      , vtype :: Type
-                     , vreferences :: [Expression]
+                     , vreferences :: [DbExpression]
                      }
 
 data DbRecord = DR { rname :: Name
-                   , rfields :: [Variable]
-                   , rmodules :: [Module]
-                   , rreferences :: [Expression]
+                   , rfields :: [DbVariable]
+                   , rmodules :: [DbModule]
+                   , rreferences :: [DbExpression]
                    }
