@@ -9,26 +9,6 @@ import Prelude hiding (elem, (==), not, (>), Int, null)
 import qualified Prelude
 import qualified Text.Regex.Posix ((=~))
 
--- import qualified Data.Set as Set (Set)
-
-{-
-data Node = Module DbModule
-          | Function DbFunction
-          | Expression DbExpression
-          | Variable DbVariable
-          | Record DbRecord
-
-loaded :: Node -> Bool
-loaded (Module m) = True
-
-name :: Node -> String
-name (Module m) = mname m
-
-functions :: Node -> [Node]
-functions (Module m) = map FunDbModulection $ mfunctions m
-
-  -}
-
 type Int = Prelude.Int
     
 (==) :: Eq a => a -> a -> Bool
@@ -51,6 +31,7 @@ u = Data.List.union
 
 (=~) :: Name -> String -> Bool
 (=~) = (Text.Regex.Posix.=~)
+
         
 newtype Module = M { getM :: DbModule }
     deriving (Show, Eq)
