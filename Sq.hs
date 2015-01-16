@@ -39,8 +39,10 @@ newtype Variable = V { getV :: DbVariable }
 
 newtype Record = R { getR :: DbRecord }
 
+type Name = String
+
 class Named a where
-    name :: a -> String
+    name :: a -> Name
 
 instance Named Module where
     name (M m) = mname m
@@ -164,8 +166,8 @@ data ExprType = Plain
 subset :: Eq a => [a] -> [a] -> Bool
 subset xs ys = all (`elem` ys) xs
 
-average :: (Integral a, Fractional b) => [a] -> b
-average xs = (fromIntegral $ sum xs) / (fromIntegral $ length xs)
+average :: [Int] -> Int
+average xs = round $ (fromIntegral $ sum xs) / (fromIntegral $ length xs)
 
 any_in :: Eq a => [a] -> [a] -> Bool
 any_in xs ys = not (null (xs `intersect` ys))
@@ -306,7 +308,7 @@ data DbRoot = DRoot { rootmodules :: [Module] }
 data DbModule = DM { mfunctions :: [Function] 
                    , mloc :: Int
                    , mrecords :: [Record]
-                   , mname :: String
+                   , mname :: Name
                    }
 instance Eq DbModule where
     m1 == m2 = mname m1 == mname m2
@@ -315,7 +317,7 @@ instance Show DbModule where
     show m = "module " ++ mname m
 
 data DbFunction =  DF
-    { fname :: String
+    { fname :: Name
     , fmodule :: Module
     , fexpressions :: [Expression]
     --       , fvariables :: [Variable]
@@ -341,12 +343,12 @@ data DbExpression = DE { etype :: ExprType
 instance Show DbExpression where
     show e = ebody e
 
-data DbVariable = DV { vname :: String
+data DbVariable = DV { vname :: Name
                      , vtype :: Type
                      , vreferences :: [Expression]
                      }
 
-data DbRecord = DR { rname :: String
+data DbRecord = DR { rname :: Name
                    , rfields :: [Variable]
                    , rmodules :: [Module]
                    , rreferences :: [Expression]
