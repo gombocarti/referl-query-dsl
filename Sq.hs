@@ -8,6 +8,7 @@ import Foreign.Erlang (ErlType (..))
 import Prelude hiding (elem, (==), not, (>), Int, null)
 import qualified Prelude
 import qualified Text.Regex.Posix ((=~))
+import Control.Monad.Fix (fix)
 
 type Int = Prelude.Int
     
@@ -31,6 +32,53 @@ u = Data.List.union
 
 (=~) :: Name -> String -> Bool
 (=~) = (Text.Regex.Posix.=~)
+
+closureN :: Int -> (a -> [a]) -> [a] -> [a]
+closureN n f xs = concat . take n . iterate (concatMap f) $ xs
+
+{-
+closureInf :: Eq a => (a -> [a]) -> [a] -> [a]
+closureInf f xs = foldl g $ iterate (map f) xs
+    where g xs ys = undefined
+-}
+
+closureInf :: Eq a => (a -> [a]) -> a -> [a]
+closureInf f xs = loop [] [xs]
+    where loop old curr = let old' = old `u` curr
+                              new = concatMap f curr in
+                           if new `subset` old'
+                           then old'
+                           else loop old' new
+
+{-
+chainN :: Int -> (a -> [a]) -> [a] -> [[a]]
+chainN n f xs = 
+-}
+
+data Chain a = Incomplete [a]
+             | Complete [a]
+             | Recursive [a]
+               deriving Show
+
+chainInf :: Eq a => (a -> [a]) -> a -> [Chain a]
+chainInf f x = loop [] [Incomplete [x]]
+    where loop finished [] = finished
+          loop finished unfinished = let new = concatMap cont unfinished
+                                         (finished', unfinished') = split new
+                                     in loop (finished' ++ finished) unfinished'
+
+          cont (Incomplete chain@(z:_)) = case f z of
+                                            [] -> [Complete chain]
+                                            ys -> [classify y chain | y <- ys]
+
+          classify y chain | y `elem` chain = Recursive chain
+                           | otherwise      = Incomplete (y:chain)
+
+          split chains = Data.List.partition isComplete chains 
+
+          isComplete (Complete _) = True
+          isComplete _            = False
+
 
 type Name = String
 
@@ -140,9 +188,9 @@ calls :: DbFunction -> [DbFunction]
 calls = fcalls
 
 data DbFunctionType = NonRecursive 
-                  | Recursive
-                  | TailRecursive
-                    deriving (Show, Eq)
+                    | NonTailRecursive
+                    | TailRecursive
+                      deriving (Show, Eq)
                    
 
 data Type = Atom
@@ -180,6 +228,9 @@ atFile = m1
 atFunction :: DbFunction
 atFunction = a
 
+atExpression :: DbExpression
+atExpression = bodya
+
 m1 :: DbModule
 m1 = DM { mname = "m1"
         , mloc = 3
@@ -216,24 +267,26 @@ ageField = DV { vname = "age"
 a :: DbFunction
 a = DF { fname = "a"
        , fmodule = m1
-       , fexpressions = [body]
+       , fexpressions = [bodya]
        , fexported = True
        , fparameters = [x]
        , fcalls = [b]
        , floc = 1
        , frecursive = NonRecursive
        }
-    where
-      body = DE { etype = FuncCall
-                , ebody = "b(X + 2)."
-                , efunction = a
-                , evariables = [x]
-                }
 
-      x = DV { vname = "X"
-             , vtype = Int
-             , vreferences = [body]
-             }
+x = DV { vname = "X"
+       , vtype = Int
+       , vreferences = [bodya]
+       }
+
+bodya = DE { etype = FuncCall
+           , ebody = "b(X + 2)."
+           , efunction = a
+           , evariables = [x]
+           , origin = [bodya]
+           }
+
 
 b :: DbFunction
 b = DF { fname = "b"
@@ -247,10 +300,11 @@ b = DF { fname = "b"
        }
     where
       body = DE { etype = FuncCall
-                , ebody = "F = 2," ++ 
-                          "F * Y."
+                , ebody = "Z = 2," ++ 
+                          "Z * Y."
                 , efunction = a
                 , evariables = [y, z]
+                , origin = [body]
                 }
 
       y = DV { vname = "Y"
@@ -267,12 +321,14 @@ nameDef = DE { etype = Plain
              , ebody = "Name = \"Géza\""
              , efunction = f
              , evariables = [nameVar]
+             , origin = [nameDef]
              }
 
 newrecord = DE { etype = Plain
                , ebody = "#p{name = Name, age = Age}"
                , efunction = f
                , evariables = [nameVar, age]
+               , origin = [newrecord]
                }
 
 age = DV { vname = "Age"
@@ -334,10 +390,11 @@ data DbExpression = DE { etype :: ExprType
                        , ebody :: String
                        , efunction :: DbFunction
                        , evariables :: [DbVariable]
+                       , origin :: [DbExpression]
                        }
 
 instance Show DbExpression where
-    show e = ebody e
+    show = ebody
 
 data DbVariable = DV { vname :: Name
                      , vtype :: Type

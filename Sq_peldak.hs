@@ -30,8 +30,8 @@ q6 :: [DbModule]
 q6 = [m | m <- modules, not (name m =~ "^test")]
 
 -- mods.funs(.calls)+
-q7 :: [DbFunction]
-q7 = undefined
+q7 :: [Chain DbFunction]
+q7 = [c | m <- modules, f <- functions m, c <- chainInf calls f]
 
 -- mods[name=io].funs[name=format].refs
 q8 :: [DbExpression]
@@ -39,11 +39,11 @@ q8 = [r | m <- modules, name m == "io"
         , f <- functions m, name f == "format"
         , r <- references f]
 
--- @expr.origin ???
-q9 = undefined
+-- @expr.origin
+q9 = [o | o <- origin atExpression]
 
 -- @fun.refs.origin
---j = let f = atDbFunction in references f >>= origin
+j = [o | r <- references atFunction, o <- origin r]
 
 -- mods.records[name=p].fields[name=name].refs
 q10 :: [DbExpression]
@@ -70,7 +70,7 @@ q14 = undefined
 
 -- mods.funs[is_tail_recursive == non_tail_rec]
 q15 :: [DbFunction]
-q15 = [f | m <- modules, f <- functions m, recursivity f == Recursive]
+q15 = [f | m <- modules, f <- functions m, recursivity f == NonTailRecursive]
 
 -- mods[name=A].funs[name=A]
 q16 :: [DbFunction]
@@ -81,13 +81,13 @@ q17 :: [DbFunction]
 q17 = q16
 
 -- mods.funs(.calls[name=B])+
-q18 :: [[DbFunction]]
-q18 = undefined
+-- so-so
+q18 :: [Chain DbFunction]
+q18 = [c | m <- modules, f <- functions m, c <- chainInf (\g -> [c | c <- calls g, name c == name g ]) f]
 
 -- mods.funs(.calls[name=B])+.name
--- loop!!!
 q19 :: [Name]
-q19 = undefined
+q19 = [name c | m <- modules, f <- functions m, c <- closureInf calls f]
 
 -- mods.funs{.calls}4
 q20 :: [[DbFunction]]
