@@ -90,8 +90,8 @@ q19 :: [Name]
 q19 = [name c | m <- modules, f <- functions m, c <- closureInf calls f]
 
 -- mods.funs{.calls}4
-q20 :: [[DbFunction]]
-q20 = undefined
+q20 :: [Chain DbFunction]
+q20 = [c | m <- modules, f <- functions m, c <- iteration 4 calls f]
 
 -- mods.funs=A.calls=A
 q21 :: [DbFunction]

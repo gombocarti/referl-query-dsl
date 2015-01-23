@@ -8,7 +8,7 @@ import Foreign.Erlang (ErlType (..))
 import Prelude hiding (elem, (==), not, (>), Int, null)
 import qualified Prelude
 import qualified Text.Regex.Posix ((=~))
-import Control.Monad.Fix (fix)
+import Data.Functor
 
 type Int = Prelude.Int
     
@@ -78,6 +78,16 @@ chainInf f x = loop [] [Incomplete [x]]
 
           isComplete (Complete _) = True
           isComplete _            = False
+
+
+iteration :: Int -> (a -> [a]) -> a -> [Chain a]
+iteration n f x = Complete <$> loop n [[x]]
+    where loop 0 chains = chains
+          loop n chains = loop (n - 1) (concatMap cont chains)
+
+          cont chain@(x:_)   = case f x of 
+                                  [] -> [chain]
+                                  ys -> [y:chain | y <- ys]
 
 
 type Name = String
