@@ -376,7 +376,7 @@ instance Eq DbModule where
     m1 == m2 = mname m1 == mname m2
 
 instance Show DbModule where
-    show m = "module " ++ mname m
+    show = mname
 
 data DbFunction =  DF
     { fname :: Name
@@ -394,7 +394,7 @@ instance Eq DbFunction where
     f1 == f2 = fmodule f1 == fmodule f2 && fname f1 == fname f2 && arity f1 == arity f2
 
 instance Show DbFunction where
-    show f = "function " ++ (name . fmodule $ f) ++ ":" ++ fname f ++ "/" ++ (show . arity $ f)
+    show f = (name . fmodule $ f) ++ ":" ++ fname f ++ "/" ++ (show . arity $ f)
 
 data DbExpression = DE { etype :: ExprType
                        , ebody :: String
