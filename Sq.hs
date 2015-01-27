@@ -133,7 +133,7 @@ instance MultiLine DbModule where
     loc = map fileLoc . mfile
 
 instance MultiLine DbFunction where
-    loc f = [floc f]
+    loc = floc
 
 moduleOf :: DbFunction -> DbModule
 moduleOf = fmodule
@@ -370,7 +370,7 @@ a = DF { fname = "a"
        , fexported = True
        , fparameters = [x]
        , fcalls = [b]
-       , floc = 1
+       , floc = [1]
        , frecursive = NonRecursive
        }
 
@@ -393,7 +393,7 @@ b = DF { fname = "b"
        , fexported = False
        , fparameters = [y]
        , fcalls = []
-       , floc = 2
+       , floc = [2]
        , frecursive = NonRecursive
        }
     where
@@ -446,7 +446,7 @@ f = DF { fname = "f"
        , fparameters = [age]
        , fexported = False
        , fcalls = []
-       , floc = 2
+       , floc = [2]
        , frecursive = NonRecursive
        }
 
@@ -502,7 +502,7 @@ data DbFunction =  DF
     , fparameters :: [DbVariable]
     , fexported :: Bool
     , fcalls :: [DbFunction]
-    , floc :: Int
+    , floc :: [Int]
     , frecursive :: DbFunctionType
     }
                 
