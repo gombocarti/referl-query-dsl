@@ -9,9 +9,13 @@ import Prelude hiding (elem, (==), not, (>), Int, null)
 import qualified Prelude
 import qualified Text.Regex.Posix ((=~))
 import Data.Functor
+import Data.Function (on)
+import qualified System.FilePath(FilePath, takeFileName, takeBaseName, takeDirectory)
 
 type Int = Prelude.Int
-    
+
+type FilePath = System.FilePath.FilePath
+
 (==) :: Eq a => a -> a -> Bool
 (==) = (Prelude.==)
 
@@ -42,8 +46,8 @@ closureInf f xs = foldl g $ iterate (map f) xs
     where g xs ys = undefined
 -}
 
-closureInf :: Eq a => (a -> [a]) -> a -> [a]
-closureInf f xs = loop [] [xs]
+lfp :: Eq a => (a -> [a]) -> a -> [a]
+lfp f xs = loop [] [xs]
     where loop old curr = let old' = old `u` curr
                               new = concatMap f curr in
                            if new `subset` old'
@@ -95,6 +99,9 @@ type Name = String
 class Named a where
     name :: a -> Name
 
+instance Named DbFile where
+    name = System.FilePath.takeBaseName . fpath
+
 instance Named DbModule where
     name = mname
 
@@ -107,23 +114,26 @@ instance Named DbVariable where
 instance Named DbRecord where
     name = rname
 
-loaded :: DbModule -> Bool
-loaded = undefined
+files :: [DbFile]
+files = rootfiles root
 
 functions :: DbModule -> [DbFunction]
 functions = mfunctions 
 
-records :: DbModule -> [DbRecord]
-records = mrecords
+records :: DbFile -> [DbRecord]
+records = frecords
 
 class MultiLine a where
-    loc :: a -> Int
+    loc :: a -> [Int]
+
+instance MultiLine DbFile where
+    loc f = [fileLoc f]
 
 instance MultiLine DbModule where 
-    loc = mloc
+    loc = map fileLoc . mfile
 
 instance MultiLine DbFunction where
-    loc = floc
+    loc f = [floc f]
 
 moduleOf :: DbFunction -> DbModule
 moduleOf = fmodule
@@ -152,8 +162,21 @@ exported = fexported
 recursivity :: DbFunction -> DbFunctionType
 recursivity = frecursive
 
-class MultiDbExpression a where
+class MultiExpression a where
     expressions :: a -> [DbExpression]
+
+instance MultiExpression DbExpression where
+    expressions = eexpr
+
+instance MultiExpression DbFunction where
+    expressions = fexpressions
+
+depth :: DbExpression -> Int
+depth = undefined
+
+max :: Ord a => [a] -> [a]
+max [] = []
+max xs = [maximum xs]
 
 class VariableDefs a where
     variables :: a -> [DbVariable]
@@ -191,6 +214,22 @@ fields = rfields
 modulesOf :: DbRecord -> [DbModule]
 modulesOf = rmodules
 
+newtype Criteria a = C (a -> a -> Bool)
+
+cmodule :: Criteria DbFunction
+cmodule = C ((==) `on` fmodule)
+
+groupBy :: [a] -> Criteria a -> [[a]]
+groupBy xs (C c) = Data.List.groupBy c xs
+
+type Grouped a b = [(b, [a])]
+
+groupBy' :: Eq b => [a] -> (a -> b) -> Grouped a b
+groupBy' xs f = zip grouping grouped
+    where 
+      grouped = Data.List.groupBy ((==) `on` f) xs
+      grouping = map (f . head) grouped
+
 arity :: DbFunction -> Int
 arity = length . parameters
 
@@ -211,8 +250,14 @@ data Type = Atom
           | Either Type Type
             deriving Show
 
-data ExprType = Plain
-              | FuncCall
+data ExprType
+ = Plain
+ | FuncCall
+ | Case
+ | If
+ | Guard
+ | Receive
+   deriving Eq
 
 subset :: Eq a => [a] -> [a] -> Bool
 subset xs ys = all (`elem` ys) xs
@@ -229,6 +274,26 @@ all_in = subset
 elem :: Eq a => a -> [a] -> Bool
 elem = Prelude.elem
 
+filename :: DbFile -> System.FilePath.FilePath
+filename = System.FilePath.takeFileName . fpath
+
+dir :: DbFile -> System.FilePath.FilePath
+dir = System.FilePath.takeDirectory . fpath
+
+path :: DbFile -> System.FilePath.FilePath
+path = fpath
+
+data FileType 
+    = Module
+    | Header
+      deriving Eq
+
+is_module :: DbFile -> Bool
+is_module = (Module ==) . ftype
+
+is_header :: DbFile -> Bool
+is_header = (Header ==) . ftype
+
 modules :: [DbModule]
 modules = rootmodules root
 
@@ -243,17 +308,41 @@ atExpression = bodya
 
 m1 :: DbModule
 m1 = DM { mname = "m1"
-        , mloc = 3
         , mfunctions = [a, b]
-        , mrecords = []
+        , mfile = [m1File]
+        , mexports = []
+        , mimports = []
         }
+
+m1File :: DbFile
+m1File = DFile { ftype = Module
+               , fpath = "/home/r2r/m1.erl"
+               , fincludes = []
+               , fincluded_by = []
+               , fmacros = []
+               , fileLoc = 3
+               , frecords = []
+               , fileModule = [m1]
+               }
 
 m2 :: DbModule
 m2 = DM { mname = "m2"
-        , mloc = 2
+        , mfile = [m2File]
         , mfunctions = [f]
-        , mrecords = [person]
+        , mexports = []
+        , mimports = []
         }
+
+m2File :: DbFile
+m2File = DFile { fileLoc = 2
+               , frecords = [person]
+               , fpath = "/home/r2r/m2.erl"
+               , ftype = Module
+               , fincludes = []
+               , fincluded_by = []
+               , fmacros = []
+               , fileModule = [m2]
+               }
 
 person :: DbRecord
 person = DR { rname = "p"
@@ -296,7 +385,6 @@ bodya = DE { etype = FuncCall
            , evariables = [x]
            , origin = [bodya]
            }
-
 
 b :: DbFunction
 b = DF { fname = "b"
@@ -363,20 +451,48 @@ f = DF { fname = "f"
        }
 
 root :: DbRoot
-root = DRoot [m1, m2]
+root = DRoot { rootmodules = [m1, m2]
+             , rootfiles = [m1File, m2File]
+             }
 
-data DbRoot = DRoot { rootmodules :: [DbModule] }
+data DbRoot = 
+    DRoot { rootmodules :: [DbModule]
+          , rootfiles :: [DbFile] 
+          }
 
-data DbModule = DM { mfunctions :: [DbFunction] 
-                   , mloc :: Int
-                   , mrecords :: [DbRecord]
-                   , mname :: Name
-                   }
+data DbModule =
+    DM { mfunctions :: [DbFunction] 
+       , mname :: Name
+       , mfile :: [DbFile]
+       , mexports :: [DbFunction]
+       , mimports :: [DbFunction]
+       }
+
+data DbFile = 
+    DFile { ftype :: FileType
+          , fpath :: System.FilePath.FilePath
+          , fincludes :: [DbFile]
+          , fincluded_by :: [DbFile]
+          , fmacros :: [DbMacro] 
+          , fileLoc :: Int
+          , frecords :: [DbRecord]
+          , fileModule :: [DbModule]
+          }
+
 instance Eq DbModule where
     m1 == m2 = mname m1 == mname m2
 
 instance Show DbModule where
     show = mname
+
+data DbMacro =
+    DMa { maName :: Name
+        , maArity :: Int
+        , maConstant :: Bool
+        , maBody :: String
+        , maRefernces :: [DbExpression]
+        , maFile :: [DbModule]
+        }
 
 data DbFunction =  DF
     { fname :: Name
@@ -401,6 +517,7 @@ data DbExpression = DE { etype :: ExprType
                        , efunction :: DbFunction
                        , evariables :: [DbVariable]
                        , origin :: [DbExpression]
+                       , eexpr :: [DbExpression]
                        }
 
 instance Show DbExpression where

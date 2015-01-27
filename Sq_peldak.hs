@@ -5,6 +5,12 @@ import Prelude (undefined)
 q1 :: [DbFunction]
 q1 = [f | m <- modules, f <- functions m ]
 
+q1' :: [[DbFunction]]
+q1' = q1 `groupBy` cmodule
+
+q1'' :: Grouped DbFunction DbModule
+q1'' = q1 `groupBy'` fmodule
+
 -- mods[name=mymod].funs[name=f].params.type
 q2 :: [Type]
 q2 = [typeOf p | m <- modules, name m == "mymod",
@@ -48,25 +54,26 @@ j = [o | r <- references atFunction, o <- origin r]
 -- mods.records[name=p].fields[name=name].refs
 q10 :: [DbExpression]
 q10 = [r | m <- modules
-         , r <- records m, name r == "p"
+         , file <- mfile m
+         , r <- records file, name r == "p"
          , f <- fields r, name f == "name"
          , r <- references f]
 
 -- mods[line_of_code > 400]
 q11 :: [DbModule]
-q11 = [m | m <- modules, loc m > 400]
+q11 = [m | m <- modules, l <- loc m, l > 400]
 
 -- mods.funs[line_of_code > 20]
 q12 :: [DbFunction]
-q12 = [f | m <- modules, f <- functions m, loc f > 20]
+q12 = [f | m <- modules, f <- functions m, l <- loc f, l > 20]
 
 -- @file.funs[max_depth_of_cases > 2]
 q13 :: [DbFunction]
-q13 = undefined
+q13 = [f | f <- functions atFile, m <- max [depth e | e <- expressions f, typeOf e == Case], m > 2]
 
 -- @file.max_depth_of_cases
-q14 :: Int
-q14 = undefined
+q14 :: [Int]
+q14 = max [ depth e | f <- functions atFile, e <- expressions f, typeOf e == Case]
 
 -- mods.funs[is_tail_recursive == non_tail_rec]
 q15 :: [DbFunction]
@@ -87,7 +94,7 @@ q18 = [c | m <- modules, f <- functions m, c <- chainInf (\g -> [c | c <- calls 
 
 -- mods.funs(.calls[name=B])+.name
 q19 :: [Name]
-q19 = [name c | m <- modules, f <- functions m, c <- closureInf calls f]
+q19 = [name c | m <- modules, f <- functions m, c <- lfp calls f]
 
 -- mods.funs{.calls}4
 q20 :: [Chain DbFunction]
@@ -107,7 +114,7 @@ q23 = [f | m <- modules, f <- functions m, name f `elem` [name c | c <- calls f]
  
 -- @file.functions.line_of_code:average
 q24 :: Int
-q24 = average [loc f | f <- functions atFile]
+q24 = average [l | f <- functions atFile, l <- loc f]
 
 -- mods.funs[.calls any_in mods[name=m1].funs]
 q25 :: [DbFunction]
@@ -124,3 +131,7 @@ q27 :: [DbFunction]
 q27 = [f | m1 <- modules, name m1 == "m1"
          , m2 <- modules, name m2 == "m2"
          , f <- (functions m1) `u` (functions m2)]
+
+-- mods.path
+q28 :: [FilePath]
+q28 = [path f | m <- modules, f <- mfile m]
