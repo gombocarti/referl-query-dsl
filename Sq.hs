@@ -480,6 +480,8 @@ data DbFile =
           , frecords :: [DbRecord]
           , fileModule :: [DbModule]
           , fspecs :: [DbSpec]
+          , ftypes :: [DbType]
+          , ftypeReferences :: [DbType]
           }
 
 instance Eq DbModule where
