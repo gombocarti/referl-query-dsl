@@ -553,7 +553,7 @@ data DbSpec =
        }
 
 data DbSpecParameter =
-    DSP { spName :: Name
+    DSP { spName :: [Name]
         , spIndex :: Int
         , spText :: String
         , spType :: DbType
