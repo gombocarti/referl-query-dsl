@@ -166,7 +166,7 @@ class MultiExpression a where
     expressions :: a -> [DbExpression]
 
 instance MultiExpression DbExpression where
-    expressions = eexpr
+    expressions = eexpressions
 
 instance MultiExpression DbFunction where
     expressions = fexpressions
@@ -251,13 +251,19 @@ data Type = Atom
             deriving Show
 
 data ExprType
- = Plain
- | FuncCall
- | Case
- | If
- | Guard
- | Receive
-   deriving Eq
+    = FuncCall
+    | ImplicitFun
+    | Fun
+    | Tuple
+    | List
+    | RecordExpr
+    | MatchExpr
+    | Case
+    | If
+    | Receive
+    | Try
+    | Begin
+      deriving Eq
 
 subset :: Eq a => [a] -> [a] -> Bool
 subset xs ys = all (`elem` ys) xs
@@ -324,6 +330,8 @@ m1File = DFile { ftype = Module
                , frecords = []
                , fileModule = [m1]
                , fspecs = []
+               , ftypes = []
+               , ftypeReferences = []
                }
 
 m2 :: DbModule
@@ -344,6 +352,8 @@ m2File = DFile { fileLoc = 2
                , fmacros = []
                , fileModule = [m2]
                , fspecs = []
+               , ftypes = []
+               , ftypeReferences = []
                }
 
 person :: DbRecord
@@ -374,6 +384,12 @@ a = DF { fname = "a"
        , fcalls = [b]
        , floc = [1]
        , frecursive = NonRecursive
+       , freferences = []
+       , fdynamicReferences = []
+       , fbif = False
+       , fpure = True
+       , fspec = []
+       , floaded = True
        }
 
 x = DV { vname = "X"
@@ -386,6 +402,8 @@ bodya = DE { etype = FuncCall
            , efunction = a
            , evariables = [x]
            , origin = [bodya]
+           , reach = []
+           , eexpressions = []
            }
 
 b :: DbFunction
@@ -397,6 +415,12 @@ b = DF { fname = "b"
        , fcalls = []
        , floc = [2]
        , frecursive = NonRecursive
+       , freferences = []
+       , fdynamicReferences = []
+       , fbif = False
+       , fpure = True
+       , fspec = []
+       , floaded = True
        }
     where
       body = DE { etype = FuncCall
@@ -405,6 +429,8 @@ b = DF { fname = "b"
                 , efunction = a
                 , evariables = [y, z]
                 , origin = [body]
+                , reach = []
+                , eexpressions = []
                 }
 
       y = DV { vname = "Y"
@@ -417,18 +443,22 @@ b = DF { fname = "b"
              , vreferences = [body]
              }
 
-nameDef = DE { etype = Plain
+nameDef = DE { etype = MatchExpr
              , ebody = "Name = \"Géza\""
              , efunction = f
              , evariables = [nameVar]
              , origin = [nameDef]
+             , reach = []
+             , eexpressions = []
              }
 
-newrecord = DE { etype = Plain
+newrecord = DE { etype = RecordExpr
                , ebody = "#p{name = Name, age = Age}"
                , efunction = f
                , evariables = [nameVar, age]
                , origin = [newrecord]
+               , reach = []
+               , eexpressions = []
                }
 
 age = DV { vname = "Age"
@@ -450,6 +480,12 @@ f = DF { fname = "f"
        , fcalls = []
        , floc = [2]
        , frecursive = NonRecursive
+       , freferences = []
+       , fdynamicReferences = []
+       , fbif = False
+       , fpure = True
+       , floaded = True
+       , fspec = []
        }
 
 root :: DbRoot
@@ -505,11 +541,23 @@ data DbFunction =
        , fexpressions :: [DbExpression]
        --       , fvariables :: [DbVariable]
        , fparameters :: [DbVariable]
+       , freferences :: [DbExpression]
+       , fdynamicReferences :: [DbExpression]
        , fexported :: Bool
        , fcalls :: [DbFunction]
        , floc :: [Int]
        , frecursive :: DbFunctionType
+       , fbif :: Bool
+       , fpure :: Bool
+       , fspec :: [DbSpec]
+       , floaded :: Bool
        }
+
+dirty :: DbFunction -> Bool
+dirty = not . fpure
+
+file :: DbExpression -> [DbFile]
+file = mfile . fmodule . efunction
                 
 instance Eq DbFunction where
     f1 == f2 = fmodule f1 == fmodule f2 && fname f1 == fname f2 && arity f1 == arity f2
@@ -523,7 +571,8 @@ data DbExpression =
        , efunction :: DbFunction
        , evariables :: [DbVariable]
        , origin :: [DbExpression]
-       , eexpr :: [DbExpression]
+       , reach :: [DbExpression]
+       , eexpressions :: [DbExpression]
        }
 
 instance Show DbExpression where
