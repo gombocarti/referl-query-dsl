@@ -323,6 +323,7 @@ m1File = DFile { ftype = Module
                , fileLoc = 3
                , frecords = []
                , fileModule = [m1]
+               , fspecs = []
                }
 
 m2 :: DbModule
@@ -342,6 +343,7 @@ m2File = DFile { fileLoc = 2
                , fincluded_by = []
                , fmacros = []
                , fileModule = [m2]
+               , fspecs = []
                }
 
 person :: DbRecord
@@ -477,6 +479,7 @@ data DbFile =
           , fileLoc :: Int
           , frecords :: [DbRecord]
           , fileModule :: [DbModule]
+          , fspecs :: [DbSpec]
           }
 
 instance Eq DbModule where
@@ -494,17 +497,17 @@ data DbMacro =
         , maFile :: [DbModule]
         }
 
-data DbFunction =  DF
-    { fname :: Name
-    , fmodule :: DbModule
-    , fexpressions :: [DbExpression]
-    --       , fvariables :: [DbVariable]
-    , fparameters :: [DbVariable]
-    , fexported :: Bool
-    , fcalls :: [DbFunction]
-    , floc :: [Int]
-    , frecursive :: DbFunctionType
-    }
+data DbFunction =
+    DF { fname :: Name
+       , fmodule :: DbModule
+       , fexpressions :: [DbExpression]
+       --       , fvariables :: [DbVariable]
+       , fparameters :: [DbVariable]
+       , fexported :: Bool
+       , fcalls :: [DbFunction]
+       , floc :: [Int]
+       , frecursive :: DbFunctionType
+       }
                 
 instance Eq DbFunction where
     f1 == f2 = fmodule f1 == fmodule f2 && fname f1 == fname f2 && arity f1 == arity f2
@@ -512,24 +515,59 @@ instance Eq DbFunction where
 instance Show DbFunction where
     show f = (name . fmodule $ f) ++ ":" ++ fname f ++ "/" ++ (show . arity $ f)
 
-data DbExpression = DE { etype :: ExprType
-                       , ebody :: String
-                       , efunction :: DbFunction
-                       , evariables :: [DbVariable]
-                       , origin :: [DbExpression]
-                       , eexpr :: [DbExpression]
-                       }
+data DbExpression =
+    DE { etype :: ExprType
+       , ebody :: String
+       , efunction :: DbFunction
+       , evariables :: [DbVariable]
+       , origin :: [DbExpression]
+       , eexpr :: [DbExpression]
+       }
 
 instance Show DbExpression where
     show = ebody
 
-data DbVariable = DV { vname :: Name
-                     , vtype :: Type
-                     , vreferences :: [DbExpression]
-                     }
+data DbVariable =
+    DV { vname :: Name
+       , vtype :: Type
+       , vreferences :: [DbExpression]
+       }
 
-data DbRecord = DR { rname :: Name
-                   , rfields :: [DbVariable]
-                   , rmodules :: [DbModule]
-                   , rreferences :: [DbExpression]
-                   }
+data DbRecord =
+    DR { rname :: Name
+       , rfields :: [DbVariable]
+       , rmodules :: [DbModule]
+       , rreferences :: [DbExpression]
+       }
+
+data DbSpec =
+    DS { sname :: Name
+       , sarity :: Int
+       , stext :: String
+       , sfile :: DbFile
+       , sfunction :: DbFunction
+       , sreferencedModule :: DbModule
+       , sreturnType :: DbType
+       , sguardType :: DbType
+       , sarguments :: [DbSpecParameter]
+       }
+
+data DbSpecParameter =
+    DSP { spName :: Name
+        , spIndex :: Int
+        , spText :: String
+        , spType :: DbType
+        } 
+
+data DbType =
+    DT { tname :: Name
+       , tarity :: Int
+       , texported :: Bool
+       , topaque :: Bool
+       , tbuiltin :: Bool
+       , tfile :: [DbFile]
+       , targuments :: [DbType]
+       , tsubtypes :: [DbType]
+       , tspecReferences :: [DbSpec]
+       , tparameterReferences :: [DbType]
+       }
