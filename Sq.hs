@@ -12,6 +12,8 @@ import Data.Functor
 import Data.Function (on)
 import qualified System.FilePath(FilePath, takeFileName, takeBaseName, takeDirectory)
 
+-- re-exported types and functions
+
 type Int = Prelude.Int
 
 type FilePath = System.FilePath.FilePath
@@ -28,14 +30,19 @@ not = Prelude.not
 null :: [a] -> Bool
 null = Prelude.null
 
+(=~) :: Name -> String -> Bool
+(=~) = (Text.Regex.Posix.=~)
+
+elem :: Eq a => a -> [a] -> Bool
+elem = Prelude.elem
+
 -- union :: [[a]] -> [a]
 -- union = concat
 
 u :: Eq a => [a] -> [a] -> [a]
 u = Data.List.union
 
-(=~) :: Name -> String -> Bool
-(=~) = (Text.Regex.Posix.=~)
+-- closures, chains
 
 closureN :: Int -> (a -> [a]) -> [a] -> [a]
 closureN n f xs = concat . take n . iterate (concatMap f) $ xs
@@ -94,6 +101,8 @@ iteration n f x = Complete <$> loop n [[x]]
                                   ys -> [y:chain | y <- ys]
 
 
+-- selectors and properties
+
 type Name = String
 
 class Named a where
@@ -114,8 +123,6 @@ instance Named DbVariable where
 instance Named DbRecord where
     name = rname
 
-files :: [DbFile]
-files = rootfiles root
 
 functions :: DbModule -> [DbFunction]
 functions = mfunctions 
@@ -153,7 +160,7 @@ instance Referencable DbVariable where
 instance Referencable DbRecord where
     references = rreferences
 
-returns :: DbFunction -> Type
+returns :: DbFunction -> DbType
 returns = undefined
 
 exported :: DbFunction -> Bool
@@ -174,10 +181,6 @@ instance MultiExpression DbFunction where
 depth :: DbExpression -> Int
 depth = undefined
 
-max :: Ord a => [a] -> [a]
-max [] = []
-max xs = [maximum xs]
-
 class VariableDefs a where
     variables :: a -> [DbVariable]
 
@@ -195,15 +198,17 @@ instance Typed DbExpression where
     type ValueType DbExpression = ExprType
     typeOf = etype
 
-instance Typed DbVariable where
-    type ValueType DbVariable = Type
-    typeOf = vtype
+class FunctionScope a where
+    function :: a -> DbFunction
+
+instance FunctionScope DbExpression where
+    function = efunction
+
+instance FunctionScope DbVariable where
+    function = efunction . head . vbindings
 
 body :: DbExpression -> String
 body = ebody
-
-function :: DbExpression -> DbFunction
-function = efunction
 
 bound :: DbVariable -> Either DbExpression DbFunction
 bound = undefined
@@ -213,22 +218,6 @@ fields = rfields
 
 modulesOf :: DbRecord -> [DbModule]
 modulesOf = rmodules
-
-newtype Criteria a = C (a -> a -> Bool)
-
-cmodule :: Criteria DbFunction
-cmodule = C ((==) `on` fmodule)
-
-groupBy :: [a] -> Criteria a -> [[a]]
-groupBy xs (C c) = Data.List.groupBy c xs
-
-type Grouped a b = [(b, [a])]
-
-groupBy' :: Eq b => [a] -> (a -> b) -> Grouped a b
-groupBy' xs f = zip grouping grouped
-    where 
-      grouped = Data.List.groupBy ((==) `on` f) xs
-      grouping = map (f . head) grouped
 
 arity :: DbFunction -> Int
 arity = length . parameters
@@ -241,15 +230,6 @@ data DbFunctionType = NonRecursive
                     | TailRecursive
                       deriving (Show, Eq)
                    
-
-data Type = Atom
-          | String
-          | Int
-          | Bool
-          | ListOf Type
-          | Either Type Type
-            deriving Show
-
 data ExprType
     = FuncCall
     | ImplicitFun
@@ -264,21 +244,6 @@ data ExprType
     | Try
     | Begin
       deriving Eq
-
-subset :: Eq a => [a] -> [a] -> Bool
-subset xs ys = all (`elem` ys) xs
-
-average :: [Int] -> Int
-average xs = round $ (fromIntegral $ sum xs) / (fromIntegral $ length xs)
-
-any_in :: Eq a => [a] -> [a] -> Bool
-any_in xs ys = not (null (xs `intersect` ys))
-
-all_in :: Eq a => [a] -> [a] -> Bool
-all_in = subset
-
-elem :: Eq a => a -> [a] -> Bool
-elem = Prelude.elem
 
 filename :: DbFile -> System.FilePath.FilePath
 filename = System.FilePath.takeFileName . fpath
@@ -300,6 +265,49 @@ is_module = (Module ==) . ftype
 is_header :: DbFile -> Bool
 is_header = (Header ==) . ftype
 
+-- grouping 
+
+newtype Criteria a = C (a -> a -> Bool)
+
+cmodule :: Criteria DbFunction
+cmodule = C ((==) `on` fmodule)
+
+groupBy :: [a] -> Criteria a -> [[a]]
+groupBy xs (C c) = Data.List.groupBy c xs
+
+type Grouped a b = [(b, [a])]
+
+groupBy' :: Eq b => [a] -> (a -> b) -> Grouped a b
+groupBy' xs f = zip grouping grouped
+    where 
+      grouped = Data.List.groupBy ((==) `on` f) xs
+      grouping = map (f . head) grouped
+
+-- set functions
+
+subset :: Eq a => [a] -> [a] -> Bool
+subset xs ys = all (`elem` ys) xs
+
+any_in :: Eq a => [a] -> [a] -> Bool
+any_in xs ys = not (null (xs `intersect` ys))
+
+all_in :: Eq a => [a] -> [a] -> Bool
+all_in = subset
+
+-- aggregate functions
+
+average :: [Int] -> Int
+average xs = round $ (fromIntegral $ sum xs) / (fromIntegral $ length xs)
+
+max :: Ord a => [a] -> [a]
+max [] = []
+max xs = [maximum xs]
+
+-- initial selectors
+
+files :: [DbFile]
+files = rootfiles root
+
 modules :: [DbModule]
 modules = rootmodules root
 
@@ -311,6 +319,8 @@ atFunction = a
 
 atExpression :: DbExpression
 atExpression = bodya
+
+-- database prototype
 
 m1 :: DbModule
 m1 = DM { mname = "m1"
@@ -365,14 +375,14 @@ person = DR { rname = "p"
 
 nameField :: DbVariable
 nameField = DV { vname = "name"
-               , vtype = String
                , vreferences = [newrecord]
+               , vbindings = []
                }
 
 ageField :: DbVariable
 ageField = DV { vname = "age"
-              , vtype = Int
               , vreferences = [newrecord]
+              , vbindings = []
               }
 
 a :: DbFunction
@@ -393,8 +403,8 @@ a = DF { fname = "a"
        }
 
 x = DV { vname = "X"
-       , vtype = Int
        , vreferences = [bodya]
+       , vbindings = []
        }
 
 bodya = DE { etype = FuncCall
@@ -434,13 +444,13 @@ b = DF { fname = "b"
                 }
 
       y = DV { vname = "Y"
-             , vtype = Int
              , vreferences = [body]
+             , vbindings = [body]
              }
 
       z = DV { vname = "Z"
-             , vtype = Int
              , vreferences = [body]
+             , vbindings = [body]
              }
 
 nameDef = DE { etype = MatchExpr
@@ -462,13 +472,13 @@ newrecord = DE { etype = RecordExpr
                }
 
 age = DV { vname = "Age"
-         , vtype = Int
          , vreferences = [newrecord]
+         , vbindings = []
          }
 
 nameVar = DV { vname = "Name"
-             , vtype = String
              , vreferences = [nameDef, newrecord]
+             , vbindings = [nameDef]
              }
 
 f :: DbFunction
@@ -487,6 +497,8 @@ f = DF { fname = "f"
        , floaded = True
        , fspec = []
        }
+
+-- concepts
 
 root :: DbRoot
 root = DRoot { rootmodules = [m1, m2]
@@ -539,7 +551,6 @@ data DbFunction =
     DF { fname :: Name
        , fmodule :: DbModule
        , fexpressions :: [DbExpression]
-       --       , fvariables :: [DbVariable]
        , fparameters :: [DbVariable]
        , freferences :: [DbExpression]
        , fdynamicReferences :: [DbExpression]
@@ -558,7 +569,7 @@ dirty = not . fpure
 
 file :: DbExpression -> [DbFile]
 file = mfile . fmodule . efunction
-                
+
 instance Eq DbFunction where
     f1 == f2 = fmodule f1 == fmodule f2 && fname f1 == fname f2 && arity f1 == arity f2
 
@@ -580,8 +591,8 @@ instance Show DbExpression where
 
 data DbVariable =
     DV { vname :: Name
-       , vtype :: Type
        , vreferences :: [DbExpression]
+       , vbindings :: [DbExpression]
        }
 
 data DbRecord =
