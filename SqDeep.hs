@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 import Text.Parsec
 import Text.Parsec.String
 import Foreign.Erlang
@@ -22,8 +20,6 @@ data Query
     | UnionExpr Query Query
     | VarExpr Var
     | RelExpr Query Binop Query
-    | Cont Query Query
-    | Sep Query Query
     | Modules
       deriving Show
 
@@ -54,18 +50,6 @@ query = between lbr rbr bind
 returnExpr :: Parser Query
 returnExpr = try app <|> var
 
-{-
-body :: Parser Query
-body = do r <- returnExpr
-          spaces
-          _ <- char '|'
-          spaces
-          qs <- bind `sepBy1` (char ',' <* spaces)
-          let cont = foldr1 Cont qs
-          return (r `Sep` cont)
-
--}
-
 body :: Parser Query
 body = do r <- returnExpr
           spaces
@@ -78,28 +62,10 @@ var :: Parser Query
 var = do v <- identifier
          return (VarExpr v)
 
-{-
-fun :: Parser Query
-fun = do v <- identifier
-         return (FunExpr v)
--}
 app :: Parser Query
 app = do f <- identifier
          a <- identifier
          return (AppExpr f a)
-
-{-
-bind :: Parser Query
-bind = try relation
-       <|>
-       do v <- identifier
-          _ <- string "<-"
-          spaces
-          x <- boundable
-          spaces
-          return (Bind x (F [v] b))
-
--}
 
 -- query = { var <- query | query }
 
