@@ -2,7 +2,9 @@ module Sq.Parser where
 
 import Text.Parsec
 import Text.Parsec.String
-import Control.Applicative ((<*))
+import qualified Text.Parsec.Token as T
+import qualified Text.Parsec.Language as L
+import Control.Applicative ((<*), (*>))
 
 type Var = String
 type Fun = String
@@ -11,6 +13,7 @@ type Arg = String
 data Query 
     = AppExpr Query Query
     | Bind Query F
+    | Return Query
     | UnionExpr Query Query
     | VarExpr Var
     | RelExpr Query Binop Query
@@ -29,25 +32,23 @@ data Binop
     | Gte
       deriving Show
 
-lbr :: Parser Char
-lbr = char '{'
+--sq :: T.LanguageDef
+sqDef = L.emptyDef 
+        { T.reservedNames = ["modules", "functions"]
+        }
 
-rbr :: Parser Char
-rbr = char '}'
+lexer = T.makeTokenParser sqDef
+
+identifier = T.identifier lexer
+symbol     = T.symbol lexer
+reserved   = T.reserved lexer
+braces     = T.braces lexer
+whiteSpace = T.whiteSpace lexer
+stringLiteral = T.stringLiteral lexer
+comma      = T.comma lexer
 
 query :: Parser Query
-query = between lbr rbr bind
-
-returnExpr :: Parser Query
-returnExpr = try app <|> var
-
-body :: Parser Query
-body = do r <- returnExpr
-          spaces
-          _ <- char '|'
-          spaces
-          b <- bind
-          return b
+query = whiteSpace *> braces bind
 
 var :: Parser Query
 var = do v <- identifier
@@ -55,57 +56,57 @@ var = do v <- identifier
 
 app :: Parser Query
 app = do f <- functions
-         spaces
          a <- identifier
-         spaces
          return (AppExpr f (VarExpr a))
 
 -- query = { var <- query | query }
 
 bind :: Parser Query
 bind =  do 
-  v <- identifier
-  _ <- string "<-"
-  spaces
-  x <- boundable
-  spaces
-  _ <- string "|"
-  spaces
-  rest <- boundable
+  v <- try $ do 
+          v <- identifier
+          _ <- bindop
+          return v
+  x <- bindable
+--  _ <- comma
+  rest <- bindable
   return (Bind x (F v rest))
 
+ret :: Parser Query
+ret = vline *> Return `fmap` (app <|> var <|> query)
 
-boundable :: Parser Query
-boundable = try modules <|> try app <|> var <|> bind  <|> query
+vline :: Parser String
+vline = symbol "|"
+
+bindop :: Parser String
+bindop = symbol "<-"
+
+bindable :: Parser Query
+bindable = modules <|> (comma *> bind) <|> app <|> var <|> query <|> ret
 
 modules :: Parser Query
-modules = string "modules" `parseAs` Modules
+modules = reserved "modules" `as` Modules
 
 functions :: Parser Query
-functions = string "functions" `parseAs` Functions
+functions = reserved "functions" `as` Functions
 
 relation :: Parser Query
 relation = do a1 <- app
-              spaces
               rel <- relop
               a2 <- app
-              spaces
               return (RelExpr a1 rel a2)
 
 relop :: Parser Binop
 relop = (eq <|> lt <|> gt) <* spaces
 
 eq :: Parser Binop
-eq = string "==" `parseAs`  Eq
+eq = string "==" `as` Eq
 
 lt :: Parser Binop
-lt = string "<" `parseAs` Lt
+lt = string "<" `as` Lt
 
 gt :: Parser Binop
-gt = string ">" `parseAs` Gt
+gt = string ">" `as` Gt
 
-parseAs :: Parser a -> b -> Parser b
-parseAs p x = do { _ <- p; return x }
-
-identifier :: Parser String
-identifier = many1 lower <* spaces
+as :: Parser a -> b -> Parser b
+as p x = do { _ <- p; return x }

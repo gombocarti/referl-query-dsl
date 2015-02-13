@@ -1,11 +1,9 @@
 import Sq.Parser
 import Data.Maybe (fromJust)
 
-import Text.Parsec
+import Text.Parsec (parse)
 import qualified Sq
     
--- [ f | f <- modules ]
-                   
 data Value
     = Module Sq.DbModule
     | Function Sq.DbFunction
@@ -19,10 +17,15 @@ instance Show Value where
 type Context = [(Var, Value)]
 
 eval :: Query -> Context -> Value
-eval (Bind m (F x body)) cont = Seq [eval body ((x, a):cont) | a <- as]
+eval (Bind m (F x body)) cont = Seq $ foldr step [] [eval body ((x, a):cont) | a <- as]
     where
       Seq as = eval m cont
-eval (VarExpr v) cont = fromJust $ lookup v cont
-eval (AppExpr Functions x) cont = let (Module m) = eval x cont in
-                                  Seq $ map Function (Sq.functions m)
+      step (Seq xs) acc = xs ++ acc
+eval (VarExpr v) cont = readVar v cont
+eval (AppExpr Functions (VarExpr v)) cont = let (Module m) = readVar v cont in
+                                            Seq $ map Function (Sq.functions m)
 eval Modules _cont = Seq $ map Module Sq.modules
+eval (Return e) cont = Seq $ [eval e cont]
+
+readVar :: Var -> Context -> Value
+readVar v cont = fromJust $ lookup v cont
