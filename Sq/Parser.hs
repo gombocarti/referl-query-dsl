@@ -68,8 +68,7 @@ bind =  do
           _ <- bindop
           return v
   x <- bindable
---  _ <- comma
-  rest <- bindable
+  rest <- following
   return (Bind x (F v rest))
 
 ret :: Parser Query
@@ -82,7 +81,10 @@ bindop :: Parser String
 bindop = symbol "<-"
 
 bindable :: Parser Query
-bindable = modules <|> (comma *> bind) <|> app <|> var <|> query <|> ret
+bindable = modules <|> app <|> query
+
+following :: Parser Query
+following = (comma *> bind) <|> ret
 
 modules :: Parser Query
 modules = reserved "modules" `as` Modules
