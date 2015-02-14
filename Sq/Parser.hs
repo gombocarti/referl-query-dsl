@@ -16,13 +16,16 @@ data Query
     | Return Query
     | UnionExpr Query Query
     | VarExpr Var
-    | RelExpr Query Binop Query
+    | Guard Query Binop Query
+    | StringLit String
     | Modules
     | Functions
+    | Name
       deriving Show
 
-data F = F Var Query
-       deriving Show
+data F 
+    = F Var Query
+      deriving Show
 
 data Binop
     = Eq
@@ -63,10 +66,7 @@ app = do f <- functions
 
 bind :: Parser Query
 bind =  do 
-  v <- try $ do 
-          v <- identifier
-          _ <- bindop
-          return v
+  v <- try $ identifier <* bindop
   x <- bindable
   rest <- following
   return (Bind x (F v rest))
@@ -84,7 +84,7 @@ bindable :: Parser Query
 bindable = modules <|> app <|> query
 
 following :: Parser Query
-following = (comma *> bind) <|> ret
+following = (comma *> (relation <|> bind)) <|> ret
 
 modules :: Parser Query
 modules = reserved "modules" `as` Modules
@@ -92,11 +92,31 @@ modules = reserved "modules" `as` Modules
 functions :: Parser Query
 functions = reserved "functions" `as` Functions
 
+name :: Parser Query
+name = do 
+  try $ do _ <- string "name" 
+           notFollowedBy letter
+  spaces
+  v <- var
+  return (AppExpr Name v)
+
+arity :: Parser Query
+arity = do 
+  try $ do _ <- string "arity" 
+           notFollowedBy letter
+  spaces
+  v <- var
+  return (AppExpr Name v)
+
 relation :: Parser Query
-relation = do a1 <- app
+relation = do a1 <- (predicate <|> (fmap StringLit stringLiteral))
               rel <- relop
-              a2 <- app
-              return (RelExpr a1 rel a2)
+              a2 <- predicate
+              rest <- following
+              return (Bind (Guard a1 rel a2) (F "()" rest))
+
+predicate :: Parser Query
+predicate = name <|> arity
 
 relop :: Parser Binop
 relop = (eq <|> lt <|> gt) <* spaces
