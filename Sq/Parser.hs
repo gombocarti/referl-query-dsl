@@ -16,16 +16,16 @@ data Query
     | Return Query
     | UnionExpr Query Query
     | VarExpr Var
-    | Guard Query Binop Query
+    | Guard Query
+    | Relation Query Binop Query
     | StringLit String
     | Modules
     | Functions
     | Name
       deriving Show
 
-data F 
-    = F Var Query
-      deriving Show
+data F = F Var Query
+         deriving Show
 
 data Binop
     = Eq
@@ -111,9 +111,9 @@ arity = do
 relation :: Parser Query
 relation = do a1 <- (predicate <|> (fmap StringLit stringLiteral))
               rel <- relop
-              a2 <- predicate
+              a2 <- (predicate <|> (fmap StringLit stringLiteral))
               rest <- following
-              return (Bind (Guard a1 rel a2) (F "()" rest))
+              return (Bind (Guard (Relation a1 rel a2)) (F "()" rest))
 
 predicate :: Parser Query
 predicate = name <|> arity
@@ -122,13 +122,13 @@ relop :: Parser Binop
 relop = (eq <|> lt <|> gt) <* spaces
 
 eq :: Parser Binop
-eq = string "==" `as` Eq
+eq = symbol "==" `as` Eq
 
 lt :: Parser Binop
-lt = string "<" `as` Lt
+lt = symbol "<" `as` Lt
 
 gt :: Parser Binop
-gt = string ">" `as` Gt
+gt = symbol ">" `as` Gt
 
 as :: Parser a -> b -> Parser b
 as p x = do { _ <- p; return x }
