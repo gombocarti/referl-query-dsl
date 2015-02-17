@@ -11,14 +11,16 @@ q1' = q1 `groupBy` cmodule
 q1'' :: Grouped DbFunction DbModule
 q1'' = q1 `groupBy'` fmodule
 
+{-
 -- mods[name=mymod].funs[name=f].params.type
-q2 :: [Type]
+q2 :: [ExprType]
 q2 = [typeOf p | m <- modules, name m == "mymod",
                  f <- functions m, name f == "f",
                  p <- parameters f]
+-}
 
 -- mods[name=m1].funs[name=g].returntypes
-q3 :: [Type]
+q3 :: [DbType]
 q3 = [returns f | m <- modules, name m == "m1", 
                   f <- functions m, name f == "g"]
          
