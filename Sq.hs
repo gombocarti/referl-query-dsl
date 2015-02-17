@@ -4,7 +4,6 @@ module Sq where
 
 import Data.List (intersect)
 import qualified Data.List
-import Foreign.Erlang (ErlType (..))
 import Prelude hiding (elem, (==), not, (>), Int, null)
 import qualified Prelude
 import qualified Text.Regex.Posix ((=~))
@@ -257,7 +256,7 @@ path = fpath
 data FileType 
     = Module
     | Header
-      deriving Eq
+      deriving (Eq, Show)
 
 is_module :: DbFile -> Bool
 is_module = (Module ==) . ftype
@@ -531,6 +530,8 @@ data DbFile =
           , ftypes :: [DbType]
           , ftypeReferences :: [DbType]
           }
+    deriving Show
+
 
 instance Eq DbModule where
     m1 == m2 = mname m1 == mname m2
@@ -546,6 +547,8 @@ data DbMacro =
         , maRefernces :: [DbExpression]
         , maFile :: [DbModule]
         }
+    deriving Show
+
 
 data DbFunction =
     DF { fname :: Name
@@ -594,6 +597,7 @@ data DbVariable =
        , vreferences :: [DbExpression]
        , vbindings :: [DbExpression]
        }
+    deriving Show
 
 data DbRecord =
     DR { rname :: Name
@@ -601,6 +605,7 @@ data DbRecord =
        , rmodules :: [DbModule]
        , rreferences :: [DbExpression]
        }
+    deriving Show
 
 data DbSpec =
     DS { sname :: Name
@@ -613,6 +618,7 @@ data DbSpec =
        , sguardType :: DbType
        , sarguments :: [DbSpecParameter]
        }
+    deriving Show
 
 data DbSpecParameter =
     DSP { spName :: [Name]
@@ -620,6 +626,7 @@ data DbSpecParameter =
         , spText :: String
         , spType :: DbType
         } 
+    deriving Show
 
 data DbType =
     DT { tname :: Name
@@ -633,3 +640,4 @@ data DbType =
        , tspecReferences :: [DbSpec]
        , tparameterReferences :: [DbType]
        }
+    deriving Show
