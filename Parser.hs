@@ -1,31 +1,30 @@
-module Sq.Parser where
+{-# LANGUAGE KindSignatures, GADTs #-}
+module Parser where
 
 import Text.Parsec
 import Text.Parsec.String
 import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
+import Sq
 
 type Var = String
-type Fun = String
-type Arg = String
 
-data Query 
-    = AppExpr Query Query
-    | Bind Query F
-    | Return Query
-    | UnionExpr Query Query
-    | VarExpr Var
-    | Guard Query
-    | Relation Query Binop Query
-    | StringLit String
-    | Modules
-    | Functions
-    | Name
-      deriving Show
+data Query :: * -> * where
+              AppExpr :: Query (a -> b) -> Query a -> Query b
+              Bind  :: Query [a] -> F (a -> [b]) -> Query [b]
+              Return :: Query a -> Query a
+              UnionExpr :: Query a -> Query a -> Query a
+              VarExpr :: Var -> Query a
+              Guard :: Query Bool -> Query [()]
+              Relation :: Ord a => Query a -> Binop -> Query a -> Query Bool
+              StringLit ::  String -> Query String
+              Modules :: Query [DbModule]
+              Functions :: Query (DbModule -> [DbFunction])
+              Name :: Named a => Query (a -> String)
 
-data F = F Var Query
-         deriving Show
+data F :: * -> * where
+          F :: Query a -> Query b -> F (a -> b)
 
 data Binop
     = Eq
@@ -34,7 +33,7 @@ data Binop
     | Gt
     | Gte
       deriving Show
-
+{-
 --sq :: T.LanguageDef
 sqDef = L.emptyDef 
         { T.reservedNames = ["modules", "functions"]
@@ -132,3 +131,4 @@ gt = symbol ">" `as` Gt
 
 as :: Parser a -> b -> Parser b
 as p x = do { _ <- p; return x }
+-}
