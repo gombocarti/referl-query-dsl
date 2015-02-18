@@ -6,25 +6,60 @@ import Text.Parsec.String
 import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
-import Sq
+import qualified Sq
 
 type Var = String
 
-data Query :: * -> * where
-              AppExpr :: Query (a -> b) -> Query a -> Query b
-              Bind  :: Query [a] -> F (a -> [b]) -> Query [b]
-              Return :: Query a -> Query a
-              UnionExpr :: Query a -> Query a -> Query a
-              VarExpr :: Var -> Query a
-              Guard :: Query Bool -> Query [()]
-              Relation :: Ord a => Query a -> Binop -> Query a -> Query Bool
-              StringLit ::  String -> Query String
-              Modules :: Query [DbModule]
-              Functions :: Query (DbModule -> [DbFunction])
-              Name :: Named a => Query (a -> String)
+class Wrap a where
+    wrap :: a -> Value
 
-data F :: * -> * where
-          F :: Query a -> Query b -> F (a -> b)
+data Value
+    = Module Sq.DbModule
+    | Function Sq.DbFunction
+    | String String
+    | Int Int
+    | Bool Bool
+    | Unit
+    | Seq [Value]
+      deriving Eq
+
+data TQuery :: * -> * where
+              TAppExpr :: TQuery (a -> b) -> TQuery a -> TQuery b
+              TBind  :: Wrap a => TQuery [a] -> TF (a -> [b]) -> TQuery [b]
+              TReturn :: TQuery a -> TQuery [a]
+              TUnionExpr :: TQuery a -> TQuery a -> TQuery a
+              TVarExpr :: Var -> TQuery a
+              TGuard :: TQuery Bool -> TQuery [()]
+              TRelation :: Ord a => TQuery a -> Binop -> TQuery a -> TQuery Bool
+              TStringLit ::  String -> TQuery String
+              TModules :: TQuery [Sq.DbModule]
+              TFunctions :: TQuery (Sq.DbModule -> [Sq.DbFunction])
+              TName :: Sq.Named a => TQuery (a -> String)
+              TArity :: TQuery (Sq.DbFunction -> Int)
+              TUnit :: TQuery ()
+
+data UQuery
+    = UAppExpr UQuery UQuery
+    | UBind UQuery UF
+    | UReturn UQuery
+    | UUnionExpr UQuery UQuery
+    | UVarExpr Var
+    | UGuard UQuery
+    | URelation UQuery Binop UQuery
+    | UStringLit String
+    | UNumLit Int
+    | UModules
+    | UFunctions
+    | UName
+    | UArity
+      deriving Show
+
+data TF :: * -> * where
+           TF :: TQuery a -> TQuery b -> TF (a -> b)
+
+
+data UF = UF Var UQuery
+          deriving Show
 
 data Binop
     = Eq
@@ -33,7 +68,7 @@ data Binop
     | Gt
     | Gte
       deriving Show
-{-
+
 --sq :: T.LanguageDef
 sqDef = L.emptyDef 
         { T.reservedNames = ["modules", "functions"]
@@ -49,29 +84,29 @@ whiteSpace = T.whiteSpace lexer
 stringLiteral = T.stringLiteral lexer
 comma      = T.comma lexer
 
-query :: Parser Query
+query :: Parser UQuery
 query = whiteSpace *> braces bind
 
-var :: Parser Query
+var :: Parser UQuery
 var = do v <- identifier
-         return (VarExpr v)
+         return (UVarExpr v)
 
-app :: Parser Query
+app :: Parser UQuery
 app = do f <- functions
          a <- identifier
-         return (AppExpr f (VarExpr a))
+         return (UAppExpr f (UVarExpr a))
 
 -- query = { var <- query | query }
 
-bind :: Parser Query
+bind :: Parser UQuery
 bind =  do 
   v <- try $ identifier <* bindop
   x <- bindable
   rest <- following
-  return (Bind x (F v rest))
+  return (UBind x (UF v rest))
 
-ret :: Parser Query
-ret = vline *> Return `fmap` (app <|> var <|> query)
+ret :: Parser UQuery
+ret = vline *> UReturn `fmap` (app <|> var <|> query)
 
 vline :: Parser String
 vline = symbol "|"
@@ -79,43 +114,44 @@ vline = symbol "|"
 bindop :: Parser String
 bindop = symbol "<-"
 
-bindable :: Parser Query
+bindable :: Parser UQuery
 bindable = modules <|> app <|> query
 
-following :: Parser Query
+following :: Parser UQuery
 following = (comma *> (relation <|> bind)) <|> ret
 
-modules :: Parser Query
-modules = reserved "modules" `as` Modules
+modules :: Parser UQuery
+modules = reserved "modules" `as` UModules
 
-functions :: Parser Query
-functions = reserved "functions" `as` Functions
+functions :: Parser UQuery
+functions = reserved "functions" `as` UFunctions
 
-name :: Parser Query
+name :: Parser UQuery
 name = do 
   try $ do _ <- string "name" 
            notFollowedBy letter
   spaces
   v <- var
-  return (AppExpr Name v)
+  return (UAppExpr UName v)
 
-arity :: Parser Query
+arity :: Parser UQuery
 arity = do 
   try $ do _ <- string "arity" 
            notFollowedBy letter
   spaces
   v <- var
-  return (AppExpr Name v)
+  return (UAppExpr UArity v)
 
-relation :: Parser Query
-relation = do a1 <- (predicate <|> (fmap StringLit stringLiteral))
+relation :: Parser UQuery
+relation = do a1 <- (predicate <|> (fmap UStringLit stringLiteral))
               rel <- relop
-              a2 <- (predicate <|> (fmap StringLit stringLiteral))
+              a2 <- (predicate <|> (fmap UStringLit stringLiteral))
               rest <- following
-              return (Bind (Guard (Relation a1 rel a2)) (F "()" rest))
+              return (UBind (UGuard (URelation a1 rel a2)) (UF "()" rest))
 
-predicate :: Parser Query
+predicate :: Parser UQuery
 predicate = name <|> arity
+
 
 relop :: Parser Binop
 relop = (eq <|> lt <|> gt) <* spaces
@@ -131,4 +167,4 @@ gt = symbol ">" `as` Gt
 
 as :: Parser a -> b -> Parser b
 as p x = do { _ <- p; return x }
--}
+
