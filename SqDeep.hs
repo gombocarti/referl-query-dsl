@@ -1,75 +1,75 @@
 {-# LANGUAGE GADTs, MultiParamTypeClasses, FlexibleInstances, ExistentialQuantification #-}
-import Parser hiding (Env)
+import Parser (Id, check, UQuery(..), UF(..), Binop(..), query)
 import Text.Parsec (parse, ParseError)
 import qualified Sq
-
+import Control.Monad.Error (throwError)
     
-instance Show Value where
-    show (Module m) = Sq.mname m
-    show (Function f) = Sq.fname f
-    show (Seq vs)   = show vs
-
-instance Sq.Named Value where
-    name (Module m) = Sq.mname m
-    name (Function f) = Sq.fname f
-
-instance Wrap Sq.DbModule where
-    wrap = Module
-    unwrap (Module m) = m
-
-instance Wrap a => Wrap [a] where
-    wrap = Seq . map wrap
-    unwrap (Seq xs) = map unwrap xs
-
-
 type Env = [(Id, Value)]
 
--- data AValue = forall a. AValue (Value a) (TTyp a)
-{-
-data Value a where
-    VModule :: Sq.DbModule -> Value Sq.DbModule
+class Wrap a where
+    wrap :: a -> Value
+    unwrap :: Value -> a
 
-class Type a where
-    theType :: TTyp a
+data Value
+    = Mod Sq.DbModule
+    | Fun Sq.DbFunction
+    | String String
+    | Int Int
+    | Bool Bool
+    | Unit
+    | Seq [Value]
+      deriving Eq
 
-instance Type Sq.DbModule where
-    theType = TTMod
--}
-{-
-parseEval :: Wrap a => String -> Maybe [a]
-parseEval s = case parse query "" s of
-                Right t -> do {q ::: _ <- check t []; return $ eval q []}
-                Left e  -> Nothing
--}
+instance Show Value where
+    show (Mod m) = Sq.name m
+    show (Fun f) = Sq.name f
+    show (Seq xs) = show xs
+    show (Int i) = show i
+    show (String s) = s
+    show (Bool b) = show b
 
-eval :: Wrap a =>  Env -> TQuery [a] -> [a]
-eval env (TBind m (TF (TVarExpr x) body)) = concat [eval ((x, wrap a) :env) body | a <- as]
+instance Ord Value where
+    (Int a) <= (Int b) = a <= b
+    (String s1) <= (String s2) = s1 <= s2
+    (Bool a) <= (Bool b) = a <= b
+
+instance Sq.Named Value where
+    name (Mod m) = Sq.name m
+    name (Fun f) = Sq.name f
+               
+run :: String -> Either String Value
+run s = either (throwError . show) 
+        (\q -> do { check q []; return $ eval q [] })
+        (parse query "" s)
+
+eval :: UQuery -> Env -> Value
+eval (UBind m (UF x body)) env = Seq . foldr step [] $ xs
     where
-      as = eval env m
-
-{-
-eval :: Wrap a => TQuery [a] -> Env -> [a]
-eval (TBind m (TF (TVarExpr x) body)) env = concat [eval body ((x, wrap a):env) | a <- as]
+      Seq as = eval m env
+      step (Seq xs) acc = xs ++ acc
+      xs = [eval body ((x,a):env) | a <- as]
+eval (UVarExpr v) env = readVar v env
+eval (UAppExpr UFunctions (UVarExpr v)) env = Seq . map Fun $ Sq.functions m
     where
-      as = eval m env
--}
-{-
-eval (VarExpr v) cont = readVar v cont
-eval (AppExpr Functions (VarExpr v)) cont = let (Module m) = readVar v cont in
-                                            Seq $ map Function (Sq.functions m)
-eval (AppExpr Name (VarExpr v)) cont = String . Sq.name $ readVar v cont
-eval Modules _cont = Seq $ map Module Sq.modules
-eval (Return e) cont = Seq $ [eval e cont]
-eval (StringLit s) _cont = String s
-eval (Relation p1 rel p2) cont = Bool $ evalRel p1' rel p2'
-    where p1' = eval p1 cont
-          p2' = eval p2 cont
-eval (Guard rel) cont = if p then Seq [Unit] else Seq []
-    where Bool p = eval rel cont
+      Mod m = readVar v env
+eval (UAppExpr UName (UVarExpr v)) env = String . Sq.name $ readVar v env
+eval UModules _env = Seq . map Mod $ Sq.modules
+eval (UReturn e) env = Seq $ [eval e env]
+eval (UStringLit s) _env = String s
+eval (URelation p1 rel p2) env = Bool $ evalRel p1' rel p2'
+    where p1' = eval p1 env
+          p2' = eval p2 env
+eval (UGuard rel) env = if p then Seq [Unit] else Seq []
+    where Bool p = eval rel env
 
-evalRel p1 Eq p2 = p1 == p2
--- evalRel p1 Gt p2 = p1 <  p2
+evalRel :: Value -> Binop -> Value -> Bool
+evalRel p1 Eq  p2 = p1 == p2
+evalRel p1 Gt  p2 = p1 >  p2
+evalRel p1 Gte p2 = p1 >= p2
+evalRel p1 Lt  p2 = p1 <  p2
+evalRel p1 Lte p2 = p1 <= p2
 
-readVar :: Var -> Env -> Value
-readVar v cont = fromJust $ lookup v cont
--}
+readVar :: Id -> Env -> Value
+readVar v env = case lookup v env of
+                  Just x -> x
+                  Nothing -> error $ "undefined variable: " ++ v
