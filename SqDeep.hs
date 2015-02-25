@@ -3,6 +3,7 @@ import Parser (Id, check, UQuery(..), UF(..), Binop(..), query)
 import Text.Parsec (parse, ParseError)
 import qualified Sq
 import Control.Monad.Error (throwError)
+import Data.List (union)
     
 type Env = [(Id, Value)]
 
@@ -56,11 +57,16 @@ eval (UAppExpr UName (UVarExpr v)) env = String . Sq.name $ readVar v env
 eval UModules _env = Seq . map Mod $ Sq.modules
 eval (UReturn e) env = Seq $ [eval e env]
 eval (UStringLit s) _env = String s
-eval (URelation p1 rel p2) env = Bool $ evalRel p1' rel p2'
+eval (UNumLit i) _env = Int i
+eval (URelation rel p1 p2) env = Bool $ evalRel p1' rel p2'
     where p1' = eval p1 env
           p2' = eval p2 env
 eval (UGuard rel) env = if p then Seq [Unit] else Seq []
     where Bool p = eval rel env
+eval (UUnionExpr q1 q2) env = Seq $ union v1 v2
+    where
+      Seq v1 = eval q1 env
+      Seq v2 = eval q2 env
 
 evalRel :: Value -> Binop -> Value -> Bool
 evalRel p1 Eq  p2 = p1 == p2

@@ -30,17 +30,20 @@ data TF a where
     TF :: TQuery a -> TQuery b -> TF (a -> b)
 
 data UQuery
-    = UAppExpr UQuery UQuery
+    = UAppExpr UFun UQuery
     | UBind UQuery UF
     | UReturn UQuery
     | UUnionExpr UQuery UQuery
     | UVarExpr Id
     | UGuard UQuery
-    | URelation UQuery Binop UQuery
+    | URelation Binop UQuery UQuery
     | UStringLit String
     | UNumLit Int
     | UModules
-    | UFunctions
+      deriving Show
+
+data UFun
+    = UFunctions
     | UName
     | UArity
       deriving Show
@@ -53,6 +56,9 @@ data Typ
     | Mod
     | Fun
     | String
+    | Int
+    | Bool
+    | Unit
       deriving (Show,Eq)
 
 getVar :: TEnv -> Id -> Either String Typ
@@ -65,7 +71,7 @@ type TEnv = [(Id,Typ)]
 check :: UQuery -> TEnv -> Either String Typ
 check (UBind m (UF x body)) e = do
   List tm <- check m e
-  List tbody <- check m ((x,tm):e)
+  List tbody <- check body ((x,tm):e)
   return $ List tbody
 check (UReturn x) e = do
   t <- check x e
@@ -76,18 +82,38 @@ check (UAppExpr UName (UVarExpr v)) e = do
   t <- getVar e v 
   named t
   return String
+check (UAppExpr UArity (UVarExpr v)) e = do
+  t <- getVar e v
+  expect Fun t
+  return Int
 check (UAppExpr UFunctions (UVarExpr v)) env = do
   t <- getVar env v
   expect t Mod
   return Fun
+check (URelation _op q1 q2) env = do
+  t1 <- check q1 env
+  t2 <- check q2 env
+  expect t1 t2
+  return Bool
+check (UGuard p) env = do
+  t <- check p env
+  expect Bool t
+  return $ List Unit
+check (UNumLit _) _env = return Int
+check (UStringLit _) _env = return String
+check (UUnionExpr q1 q2) env = do
+  t1 <- check q1 env
+  t2 <- check q2 env
+  expect t1 t2
+  return t1
 
 named :: Typ -> Either String ()
 named t | t `elem` [Mod,Fun] = return ()
         | otherwise = throwError $ "dont have name: " ++ show t
 
 expect :: Typ -> Typ -> Either String ()
-expect act exp | act == exp = return ()
-               | otherwise = throwError $ "type error: expected: " ++ show exp
+expect exp act | act == exp = return ()
+               | otherwise = throwError $ "type error: expected: " ++ show exp ++ ", actual: " ++ show act
 
 data Binop
     = Eq
@@ -97,7 +123,6 @@ data Binop
     | Gte
       deriving Show
 
---sq :: T.LanguageDef
 sqDef = L.emptyDef 
         { T.reservedNames = ["modules", "functions"]
         }
@@ -150,7 +175,7 @@ following = (comma *> (relation <|> bind)) <|> ret
 modules :: Parser UQuery
 modules = reserved "modules" `as` UModules
 
-functions :: Parser UQuery
+functions :: Parser UFun
 functions = reserved "functions" `as` UFunctions
 
 name :: Parser UQuery
@@ -174,7 +199,7 @@ relation = do a1 <- (predicate <|> (fmap UStringLit stringLiteral))
               rel <- relop
               a2 <- (predicate <|> (fmap UStringLit stringLiteral))
               rest <- following
-              return (UBind (UGuard (URelation a1 rel a2)) (UF "()" rest))
+              return (UBind (UGuard (URelation rel a1 a2)) (UF "()" rest))
 
 predicate :: Parser UQuery
 predicate = name <|> arity
