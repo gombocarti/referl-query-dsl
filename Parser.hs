@@ -1,4 +1,4 @@
-{-# LANGUAGE KindSignatures, GADTs #-}
+{-# LANGUAGE GADTs, ExistentialQuantification #-}
 module Parser where
 
 import Text.Parsec
@@ -7,11 +7,14 @@ import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
 import qualified Sq
+import Data.Maybe (isJust)
 
-type Var = String
+type Id = String
 
 class Wrap a where
     wrap :: a -> Value
+    unwrap :: Value -> a
+
 
 data Value
     = Module Sq.DbModule
@@ -23,27 +26,30 @@ data Value
     | Seq [Value]
       deriving Eq
 
-data TQuery :: * -> * where
-              TAppExpr :: TQuery (a -> b) -> TQuery a -> TQuery b
-              TBind  :: Wrap a => TQuery [a] -> TF (a -> [b]) -> TQuery [b]
-              TReturn :: TQuery a -> TQuery [a]
-              TUnionExpr :: TQuery a -> TQuery a -> TQuery a
-              TVarExpr :: Var -> TQuery a
-              TGuard :: TQuery Bool -> TQuery [()]
-              TRelation :: Ord a => TQuery a -> Binop -> TQuery a -> TQuery Bool
-              TStringLit ::  String -> TQuery String
-              TModules :: TQuery [Sq.DbModule]
-              TFunctions :: TQuery (Sq.DbModule -> [Sq.DbFunction])
-              TName :: Sq.Named a => TQuery (a -> String)
-              TArity :: TQuery (Sq.DbFunction -> Int)
-              TUnit :: TQuery ()
+data TQuery a where
+    TAppExpr :: TQuery (a -> b) -> TQuery a -> TQuery b
+    TBind  :: Wrap a => TQuery [a] -> TF (a -> [b]) -> TQuery [b]
+    TReturn :: TQuery a -> TQuery [a]
+    TUnionExpr :: TQuery [a] -> TQuery [a] -> TQuery [a]
+    TVarExpr :: Id -> TQuery a
+    TGuard :: TQuery Bool -> TQuery [()]
+    TRelation :: Ord a => TQuery a -> Binop -> TQuery a -> TQuery Bool
+    TStringLit ::  String -> TQuery String
+    TModules :: TQuery [Sq.DbModule]
+    TFunctions :: TQuery (Sq.DbModule -> [Sq.DbFunction])
+    TName :: Sq.Named a => TQuery (a -> String)
+    TArity :: TQuery (Sq.DbFunction -> Int)
+    TUnit :: TQuery ()
+
+data TF a where
+    TF :: TQuery a -> TQuery b -> TF (a -> b)
 
 data UQuery
     = UAppExpr UQuery UQuery
     | UBind UQuery UF
     | UReturn UQuery
     | UUnionExpr UQuery UQuery
-    | UVarExpr Var
+    | UVarExpr Id
     | UGuard UQuery
     | URelation UQuery Binop UQuery
     | UStringLit String
@@ -54,13 +60,99 @@ data UQuery
     | UArity
       deriving Show
 
-data TF :: * -> * where
-           TF :: TQuery a -> TQuery b -> TF (a -> b)
-
-
-data UF = UF Var UQuery
+data UF = UF Id UQuery
           deriving Show
 
+data VType = TModule | TFunction | TInt | TString | TList VType
+
+data Var e a where
+    Zro :: Var (e,a) a
+    Suc :: Var e a -> Var (e,b) a
+
+data Env e where
+    Emp :: Env ()
+    Ext :: Env e -> Id -> Typ a -> Env (e,a)
+
+data Typ a where
+--    Int ::                     Typ Int
+--    String :: Typ String
+    List :: Typ a -> Typ [a]
+    Mod :: Typ Sq.DbModule
+    Fun :: Typ Sq.DbFunction
+  --  Arr :: Typ a -> Typ b -> Typ (a -> b)
+
+{-
+data CompQuery t env where
+    (:::) :: (env -> a) -> t a -> CompQuery t env
+-}
+
+type Env' a = [(Id, a)]
+
+{-    
+type SymTab t env = Env' (CompQuery t env)
+-}
+data TTQuery where
+    (:::) :: TQuery a -> Typ a -> TTQuery
+
+{-
+getVar :: Env e -> Id -> Var (a,b) b
+getVar (Ext e id t) v | v == id = Zro
+                      | otherwise = Suc (getVar e v)
+
+-}
+{-           
+getEnv :: Env e -> Id -> Typ a
+getEnv Emp v = error $ "undefined variable: " ++ v
+getEnv (Ext e id t) v = t
+-}
+check :: UQuery -> Env e -> Either String (TTQuery)
+check (UBind m (UF x body)) e = do
+  m' ::: List tm <- check m e
+  body' ::: List tbody <- check m (Ext e x tm)
+  return $ (TBind m' (TF (TVarExpr x) body')) ::: List tbody
+check (UReturn x) e = do
+  x' ::: tx <- check x e
+  return $ (TReturn x') ::: List tx
+check (UVarExpr v) e = undefined
+  
+  
+
+
+{-
+check :: UQuery -> SymTab Typ env -> Either String (CompQuery Typ env)
+check (UBind m (UF x body)) e = do
+  m' ::: List tm <- check m e
+  body' ::: t@(List tbody) <- check body ((x,
+  return $ (TBind m' (TF (TVarExpr x) body')) ::: List tbody
+-}
+
+
+{-           
+check :: UQuery -> Env -> Maybe (ATExp)
+check (UBind m (UF x body)) env = do 
+  m' ::: TTList z <- check m env
+  body' ::: TTList y <- check body ((x, TVarExpr x ::: z):env)
+  return ((TBind m' (TF (TVarExpr x) body')) ::: TTList y)
+check UModules _env = return $ TModules ::: (TTList TTMod)
+-- check UName _env = return $ Sq.name ::: TTArr
+check (UAppExpr UName (UVarExpr v)) env = case isDefined v env of
+                                            True -> return $ TAppExpr (TName :: TQuery (Sq.DbFunction -> String)) (TVarExpr v) ::: TTStr
+                                            False -> error $ "unbound variable: " ++ v
+check (UAppExpr UFunctions (UVarExpr v)) env = case isDefined v env of
+                                                 True -> return $ TAppExpr TFunctions (TVarExpr v) ::: TTList TTFun
+                                                 False -> Nothing
+check (UReturn m) env = do
+  m' ::: t <- check m env
+  return $ TReturn m' ::: TTList t
+-}
+
+{-
+check :: Wrap a => UQuery -> Env -> Either String (TQuery [a], VType)
+check (UBind m (UF x body)) env = do
+  (m', mt) <- check m env
+  (body', bodyt) <- check body ((x,mt):env)
+  return $ (TBind m' (TF (TVarExpr x) body'), bodyt)
+-}
 data Binop
     = Eq
     | Lt
@@ -88,8 +180,7 @@ query :: Parser UQuery
 query = whiteSpace *> braces bind
 
 var :: Parser UQuery
-var = do v <- identifier
-         return (UVarExpr v)
+var = UVarExpr `fmap` identifier
 
 app :: Parser UQuery
 app = do f <- functions
