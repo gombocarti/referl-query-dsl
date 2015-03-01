@@ -9,6 +9,7 @@ import Control.Applicative ((<*), (*>))
 import qualified Sq (DbModule, DbFunction, Named, FileType)
 import Control.Monad.Error (throwError)
 import Control.Applicative ((<$>))
+import Prelude hiding (filter)
 
 -- |Identifiers.
 type Id = String
@@ -43,6 +44,10 @@ data UQuery
     | UStringLit String
     | UNumLit Int
     | UModules
+    | UFiles
+    | AtFile
+    | AtFunction
+    | AtExpr
       deriving Show
 
 -- |Applicable functions of the query language.
@@ -56,8 +61,15 @@ data UFun
     | ULoc       -- ^ Line of code.
     | UName      
     | UArity
+    | UCalls
     | UNull      -- ^ Prelude.null.
+    | UNot       -- ^ Prelude.not
     | UFName String -- ^ Function identified by its name.
+    | UExported
+    | URecursivity
+    | UReturns
+    | UReferences
+    | UParameters
       deriving (Show, Eq)
 
 -- |Untyped function.
@@ -81,6 +93,7 @@ data Typ
     | Int
     | Bool
     | Unit
+    | FunRecursivity
       deriving (Show,Eq)
 
 getVar :: TEnv -> Id -> Either String Typ
@@ -104,10 +117,14 @@ check (UVarExpr v) e = do
   tv <- getVar e v  
   return $ UVarExpr v ::: tv
 check UModules _env = return $ UModules ::: List Mod
-check (UAppExpr (UFName f) (UVarExpr v)) env = do
-  vt <- getVar env v
-  (f', ft) <- checkFun f vt
-  return $ (UAppExpr f' (UVarExpr v)) ::: ft                   
+check UFiles _env = return $ UFiles ::: List File
+check AtFile _env = return $ AtFile ::: File
+check AtFunction _env = return $ AtFunction ::: Fun
+check AtExpr _env = return $ AtExpr ::: Expr
+check (UAppExpr (UFName f) arg) env = do
+  arg' ::: argt <- check arg env
+  (f', ft) <- checkFun f argt
+  return $ (UAppExpr f' arg') ::: ft
 check (URelation op q1 q2) env = do
   q1' ::: t1 <- check q1 env
   q2' ::: t2 <- check q2 env
@@ -126,8 +143,9 @@ check (UUnionExpr q1 q2) env = do
   return $ (UUnionExpr q1' q2') ::: t1
 
 checkFun :: Id -> Typ -> Either String (UFun, Typ)
-checkFun f p | f == "name" = named p >> return  (UName, String)
-             | otherwise = case lookup f funtypes of
+checkFun "name" p = named p >> return  (UName, String)
+checkFun "references" p = referencable p >> return (UReferences, List Expr)
+checkFun f p = case lookup f funtypes of
                  Just (f', pt, rt) -> do
                    expect pt p;
                    return (f', rt)
@@ -138,12 +156,24 @@ funtypes :: [(Id, (UFun, Typ, Typ))]
 funtypes = [("functions", (UFunctions, Mod, List Fun))
            , ("arity", (UArity, Fun, Int))
            , ("null", (UNull, List Poly, Bool))
+           , ("calls", (UCalls, Fun, List Fun))
+           , ("path", (UPath, File, String))
+           , ("file", (UFile, Mod, List File))
+           , ("exported", (UExported, Fun, Bool))
+           , ("recursivity", (URecursivity, Fun, FunRecursivity))
+           , ("returns", (UReturns, Fun, Type))
+           , ("parameters", (UParameters, Fun, List Expr))
+           , ("not", (UNot, Bool, Bool))
            ]
 
 -- |Checks whether the particular type have name function.
 named :: Typ -> Either String ()
-named t | t `elem` [Mod,Fun] = return ()
+named t | t `elem` [File,Mod,Fun,Record] = return ()
         | otherwise = throwError $ "dont have name: " ++ show t
+
+referencable :: Typ -> Either String ()
+referencable t | t `elem` [Fun,Record] = return ()
+               | otherwise = throwError $ "not referencable :" ++ show t
 
 expect :: Typ -> Typ -> Either String ()
 expect (List Poly) (List _b) = return ()
@@ -180,17 +210,20 @@ whiteSpace = T.whiteSpace lexer
 stringLiteral = T.stringLiteral lexer
 comma      = T.comma lexer
 decimal    = T.decimal lexer
+parens     = T.parens lexer
 
 query :: Parser UQuery
 query = whiteSpace *> braces bind
 
 var :: Parser UQuery
-var = UVarExpr `fmap` identifier
+var = UVarExpr <$> identifier
 
 app :: Parser UQuery
-app = try $ do f <- identifier
-               a <- identifier
-               return (UAppExpr (UFName f) (UVarExpr a))
+app = parens app
+      <|> 
+      (try $ do f <- identifier
+                arg <- var <|> app
+                return (UAppExpr (UFName f) arg))
 
 -- query = { var <- query | query }
 
@@ -202,7 +235,7 @@ bind =  do
   return (UBind x (UF v rest))
 
 ret :: Parser UQuery
-ret = vline *> UReturn `fmap` (app <|> var <|> query)
+ret = vline *> (UReturn <$> (app <|> var <|> query))
 
 vline :: Parser String
 vline = symbol "|"
@@ -214,17 +247,24 @@ bindable :: Parser UQuery
 bindable = modules <|> app <|> query
 
 following :: Parser UQuery
-following = (comma *> (relation <|> bind)) <|> ret
+following = (comma *> (filter <|> bind)) <|> ret
 
 modules :: Parser UQuery
 modules = reserved "modules" `as` UModules
 
 relation :: Parser UQuery
-relation = do a1 <- relOperand
-              rel <- relop
+relation = do rel <- try $ do 
+                       a1 <- relOperand
+                       rel <- relop
+                       return $ URelation rel a1
               a2 <- relOperand
-              rest <- following
-              return (UBind (UGuard (URelation rel a1 a2)) (UF "()" rest))
+              return $ rel a2
+
+filter :: Parser UQuery
+filter = do 
+  f <- relation <|> app
+  rest <- following
+  return (UBind (UGuard f) (UF "()" rest))
 
 relOperand :: Parser UQuery
 relOperand = app <|> var <|> numLit <|> stringLit
