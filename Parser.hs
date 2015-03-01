@@ -228,10 +228,13 @@ numLit = do
   return $ UNumLit (fromIntegral n)
 
 relop :: Parser Binop
-relop = (eq <|> lte <|> lt <|> gte <|> gt) <* spaces
+relop = (eq <|> neq <|> lte <|> lt <|> gte <|> gt) <* spaces
 
 eq :: Parser Binop
 eq = symbol "==" `as` Eq
+
+neq :: Parser Binop
+neq = symbol "/=" `as` NEq
 
 lt :: Parser Binop
 lt = symbol "<" `as` Lt
