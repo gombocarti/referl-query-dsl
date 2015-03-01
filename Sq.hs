@@ -530,7 +530,7 @@ data DbFile =
           , ftypes :: [DbType]
           , ftypeReferences :: [DbType]
           }
-    deriving Show
+    deriving (Show,Eq)
 
 
 instance Eq DbModule where
@@ -547,7 +547,7 @@ data DbMacro =
         , maRefernces :: [DbExpression]
         , maFile :: [DbModule]
         }
-    deriving Show
+    deriving (Show, Eq)
 
 
 data DbFunction =
@@ -588,6 +588,7 @@ data DbExpression =
        , reach :: [DbExpression]
        , eexpressions :: [DbExpression]
        }
+    deriving Eq
 
 instance Show DbExpression where
     show = ebody
@@ -597,7 +598,7 @@ data DbVariable =
        , vreferences :: [DbExpression]
        , vbindings :: [DbExpression]
        }
-    deriving Show
+    deriving (Show, Eq)
 
 data DbRecord =
     DR { rname :: Name
@@ -605,7 +606,7 @@ data DbRecord =
        , rmodules :: [DbModule]
        , rreferences :: [DbExpression]
        }
-    deriving Show
+    deriving (Show, Eq)
 
 data DbSpec =
     DS { sname :: Name
@@ -618,7 +619,7 @@ data DbSpec =
        , sguardType :: DbType
        , sarguments :: [DbSpecParameter]
        }
-    deriving Show
+    deriving (Show,Eq)
 
 data DbSpecParameter =
     DSP { spName :: [Name]
@@ -626,7 +627,7 @@ data DbSpecParameter =
         , spText :: String
         , spType :: DbType
         } 
-    deriving Show
+    deriving (Show,Eq)
 
 data DbType =
     DT { tname :: Name
@@ -640,4 +641,4 @@ data DbType =
        , tspecReferences :: [DbSpec]
        , tparameterReferences :: [DbType]
        }
-    deriving Show
+    deriving (Show,Eq)
