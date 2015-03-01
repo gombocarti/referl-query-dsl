@@ -8,6 +8,7 @@ import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
 import qualified Sq (DbModule, DbFunction, Named, FileType)
 import Control.Monad.Error (throwError)
+import Control.Applicative ((<$>))
 
 type Id = String
 
@@ -167,6 +168,7 @@ braces     = T.braces lexer
 whiteSpace = T.whiteSpace lexer
 stringLiteral = T.stringLiteral lexer
 comma      = T.comma lexer
+decimal    = T.decimal lexer
 
 query :: Parser UQuery
 query = whiteSpace *> braces bind
@@ -206,35 +208,23 @@ following = (comma *> (relation <|> bind)) <|> ret
 modules :: Parser UQuery
 modules = reserved "modules" `as` UModules
 
-functions :: Parser UFun
-functions = reserved "functions" `as` UFunctions
-
-name :: Parser UQuery
-name = do 
-  try $ do _ <- string "name" 
-           notFollowedBy letter
-  spaces
-  v <- var
-  return (UAppExpr UName v)
-
-arity :: Parser UQuery
-arity = do 
-  try $ do _ <- string "arity" 
-           notFollowedBy letter
-  spaces
-  v <- var
-  return (UAppExpr UArity v)
-
 relation :: Parser UQuery
-relation = do a1 <- (predicate <|> (fmap UStringLit stringLiteral))
+relation = do a1 <- relOperand
               rel <- relop
-              a2 <- (predicate <|> (fmap UStringLit stringLiteral))
+              a2 <- relOperand
               rest <- following
               return (UBind (UGuard (URelation rel a1 a2)) (UF "()" rest))
 
-predicate :: Parser UQuery
-predicate = name <|> arity
+relOperand :: Parser UQuery
+relOperand = app <|> var <|> numLit <|> stringLit
 
+stringLit :: Parser UQuery
+stringLit = UStringLit <$> stringLiteral
+
+numLit :: Parser UQuery
+numLit = do 
+  n <- lexeme decimal
+  return $ UNumLit (fromIntegral n)
 
 relop :: Parser Binop
 relop = (eq <|> lt <|> gt) <* spaces
