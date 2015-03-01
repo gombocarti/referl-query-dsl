@@ -259,10 +259,10 @@ data FileType
       deriving (Eq, Show)
 
 is_module :: DbFile -> Bool
-is_module = (Module ==) . ftype
+is_module = fismodule
 
 is_header :: DbFile -> Bool
-is_header = (Header ==) . ftype
+is_header = not . fismodule
 
 -- grouping 
 
@@ -330,7 +330,7 @@ m1 = DM { mname = "m1"
         }
 
 m1File :: DbFile
-m1File = DFile { ftype = Module
+m1File = DFile { fismodule = True
                , fpath = "/home/r2r/m1.erl"
                , fincludes = []
                , fincluded_by = []
@@ -355,7 +355,7 @@ m2File :: DbFile
 m2File = DFile { fileLoc = 2
                , frecords = [person]
                , fpath = "/home/r2r/m2.erl"
-               , ftype = Module
+               , fismodule = True
                , fincludes = []
                , fincluded_by = []
                , fmacros = []
@@ -518,7 +518,7 @@ data DbModule =
        }
 
 data DbFile = 
-    DFile { ftype :: FileType
+    DFile { fismodule :: Bool
           , fpath :: System.FilePath.FilePath
           , fincludes :: [DbFile]
           , fincluded_by :: [DbFile]
