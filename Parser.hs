@@ -6,7 +6,7 @@ import Text.Parsec.String
 import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
-import qualified Sq
+import qualified Sq (DbModule, DbFunction, Named, FileType)
 import Control.Monad.Error (throwError)
 
 type Id = String
@@ -42,19 +42,36 @@ data UQuery
     | UModules
       deriving Show
 
+-- |Applicable functions of the query language.
 data UFun
-    = UFunctions
-    | UName
+    = UFunctions -- ^ Functions of a module.
+    | UPath      -- ^ Path of a loaded file.
+    | UIsModule  -- ^ True if the file contains a module.
+    | UFile      -- ^ File of a module.
+    | UExports   -- ^ Exported functions of a module.
+    | UImports   -- ^ Imported functions of a module.
+    | ULoc       -- ^ Line of code.
+    | UName      
     | UArity
-      deriving Show
+    | UFName String -- ^ Function identified by its name.
+      deriving (Show, Eq)
 
+-- |Untyped function.
 data UF = UF Id UQuery
           deriving Show
 
+-- |Types of the query language.
 data Typ
     = List Typ
+    | File
     | Mod
     | Fun
+    | Expr
+    | Macro
+    | Record
+    | Spec
+    | SpecParam
+    | Type
     | String
     | Int
     | Bool
@@ -68,45 +85,54 @@ getVar env v = case lookup v env of
 
 type TEnv = [(Id,Typ)]
 
-check :: UQuery -> TEnv -> Either String Typ
-check (UBind m (UF x body)) e = do
-  List tm <- check m e
-  List tbody <- check body ((x,tm):e)
-  return $ List tbody
-check (UReturn x) e = do
-  t <- check x e
-  return $ List t
-check (UVarExpr v) e = getVar e v  
-check UModules _env = return $ List Mod
-check (UAppExpr UName (UVarExpr v)) e = do
-  t <- getVar e v 
-  named t
-  return String
-check (UAppExpr UArity (UVarExpr v)) e = do
-  t <- getVar e v
-  expect Fun t
-  return Int
-check (UAppExpr UFunctions (UVarExpr v)) env = do
-  t <- getVar env v
-  expect t Mod
-  return Fun
-check (URelation _op q1 q2) env = do
-  t1 <- check q1 env
-  t2 <- check q2 env
-  expect t1 t2
-  return Bool
-check (UGuard p) env = do
-  t <- check p env
-  expect Bool t
-  return $ List Unit
-check (UNumLit _) _env = return Int
-check (UStringLit _) _env = return String
-check (UUnionExpr q1 q2) env = do
-  t1 <- check q1 env
-  t2 <- check q2 env
-  expect t1 t2
-  return t1
+data TUQuery = UQuery ::: Typ deriving Show
 
+check :: UQuery -> TEnv -> Either String TUQuery
+check (UBind m (UF x body)) e = do
+  m' ::: List tm <- check m e
+  body' ::: List tbody <- check body ((x,tm):e)
+  return $ (UBind m' (UF x body')) ::: List tbody
+check (UReturn x) e = do
+  x' ::: t <- check x e
+  return $ UReturn x' ::: List t
+check (UVarExpr v) e = do
+  tv <- getVar e v  
+  return $ UVarExpr v ::: tv
+check UModules _env = return $ UModules ::: List Mod
+check (UAppExpr (UFName f) (UVarExpr v)) env = do
+  vt <- getVar env v
+  (f', ft) <- checkFun f vt
+  return $ (UAppExpr f' (UVarExpr v)) ::: ft                   
+check (URelation op q1 q2) env = do
+  q1' ::: t1 <- check q1 env
+  q2' ::: t2 <- check q2 env
+  expect t1 t2
+  return $ (URelation op q1' q2') ::: Bool
+check (UGuard p) env = do
+  p' ::: t <- check p env
+  expect Bool t
+  return $ p' ::: List Unit
+check q@(UNumLit _) _env = return $ q ::: Int
+check q@(UStringLit _) _env = return $ q ::: String
+check (UUnionExpr q1 q2) env = do
+  q1' ::: t1 <- check q1 env
+  q2' ::: t2 <- check q2 env
+  expect t1 t2
+  return $ (UUnionExpr q1' q2') ::: t1
+
+checkFun :: Id -> Typ -> Either String (UFun, Typ)
+checkFun f p | f == "name" = named p >> return  (UName, String)
+             | otherwise = case lookup f funtypes of
+                 Just (f', pt, rt) -> do
+                   expect pt p;
+                   return (f', rt)
+                 Nothing -> throwError $ "undefined function: " ++ f
+
+-- |Stores name, ast node, parameter type, return type of functions.
+funtypes :: [(Id, (UFun, Typ, Typ))]
+funtypes = [("functions", (UFunctions, Mod, List Fun)), ("arity", (UArity, Fun, Int))]
+
+-- |Checks whether the particular type have name function.
 named :: Typ -> Either String ()
 named t | t `elem` [Mod,Fun] = return ()
         | otherwise = throwError $ "dont have name: " ++ show t
@@ -123,12 +149,17 @@ data Binop
     | Gte
       deriving Show
 
+{-
 sqDef = L.emptyDef 
         { T.reservedNames = ["modules", "functions"]
         }
 
 lexer = T.makeTokenParser sqDef
+-}
 
+lexer = L.haskell
+
+lexeme     = T.lexeme lexer
 identifier = T.identifier lexer
 symbol     = T.symbol lexer
 reserved   = T.reserved lexer
@@ -144,9 +175,9 @@ var :: Parser UQuery
 var = UVarExpr `fmap` identifier
 
 app :: Parser UQuery
-app = do f <- functions
-         a <- identifier
-         return (UAppExpr f (UVarExpr a))
+app = try $ do f <- identifier
+               a <- identifier
+               return (UAppExpr (UFName f) (UVarExpr a))
 
 -- query = { var <- query | query }
 
