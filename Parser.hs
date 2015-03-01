@@ -45,9 +45,9 @@ data UQuery
     | UNumLit Int
     | UModules
     | UFiles
-    | AtFile
-    | AtFunction
-    | AtExpr
+    | UAtFile
+    | UAtFunction
+    | UAtExpr
       deriving Show
 
 -- |Applicable functions of the query language.
@@ -118,9 +118,9 @@ check (UVarExpr v) e = do
   return $ UVarExpr v ::: tv
 check UModules _env = return $ UModules ::: List Mod
 check UFiles _env = return $ UFiles ::: List File
-check AtFile _env = return $ AtFile ::: File
-check AtFunction _env = return $ AtFunction ::: Fun
-check AtExpr _env = return $ AtExpr ::: Expr
+check UAtFile _env = return $ UAtFile ::: File
+check UAtFunction _env = return $ UAtFunction ::: Fun
+check UAtExpr _env = return $ UAtExpr ::: Expr
 check (UAppExpr (UFName f) arg) env = do
   arg' ::: argt <- check arg env
   (f', ft) <- checkFun f argt
@@ -133,7 +133,7 @@ check (URelation op q1 q2) env = do
 check (UGuard p) env = do
   p' ::: t <- check p env
   expect Bool t
-  return $ p' ::: List Unit
+  return $ UGuard p' ::: List Unit
 check q@(UNumLit _) _env = return $ q ::: Int
 check q@(UStringLit _) _env = return $ q ::: String
 check (UUnionExpr q1 q2) env = do
@@ -251,6 +251,12 @@ following = (comma *> (filter <|> bind)) <|> ret
 
 modules :: Parser UQuery
 modules = reserved "modules" `as` UModules
+
+atFile :: Parser UQuery
+atFile = reserved "atFile" `as` UAtFile
+
+atFunction :: Parser UQuery
+atFunction = reserved "atFunction" `as` UAtFunction
 
 relation :: Parser UQuery
 relation = do rel <- try $ do 
