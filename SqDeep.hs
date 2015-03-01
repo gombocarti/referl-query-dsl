@@ -70,6 +70,7 @@ eval (UUnionExpr q1 q2) env = Seq $ union v1 v2
 
 evalRel :: Value -> Binop -> Value -> Bool
 evalRel p1 Eq  p2 = p1 == p2
+evalRel p1 NEq p2 = p1 /= p2
 evalRel p1 Gt  p2 = p1 >  p2
 evalRel p1 Gte p2 = p1 >= p2
 evalRel p1 Lt  p2 = p1 <  p2

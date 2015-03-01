@@ -144,21 +144,22 @@ expect exp act | act == exp = return ()
 
 data Binop
     = Eq
+    | NEq
     | Lt
     | Lte
     | Gt
     | Gte
       deriving Show
 
-{-
-sqDef = L.emptyDef 
-        { T.reservedNames = ["modules", "functions"]
+
+sqDef = L.haskellDef
+        { T.opStart = oneOf "<=>"
+        , T.opLetter = T.opStart sqDef
         }
 
 lexer = T.makeTokenParser sqDef
--}
 
-lexer = L.haskell
+-- lexer = L.haskell
 
 lexeme     = T.lexeme lexer
 identifier = T.identifier lexer
@@ -227,7 +228,7 @@ numLit = do
   return $ UNumLit (fromIntegral n)
 
 relop :: Parser Binop
-relop = (eq <|> lt <|> gt) <* spaces
+relop = (eq <|> lte <|> lt <|> gte <|> gt) <* spaces
 
 eq :: Parser Binop
 eq = symbol "==" `as` Eq
@@ -235,8 +236,17 @@ eq = symbol "==" `as` Eq
 lt :: Parser Binop
 lt = symbol "<" `as` Lt
 
+lte :: Parser Binop
+lte = symbol "<=" `as` Lte
+
 gt :: Parser Binop
 gt = symbol ">" `as` Gt
+
+gte :: Parser Binop
+gte = symbol ">=" `as` Gte
+
+relations :: [(String, Binop)]
+relations = [("==", Eq), ("<", Lt), ("<=", Lte), (">", Gt), (">=", Gte), ("/=", NEq)]
 
 as :: Parser a -> b -> Parser b
 as p x = do { _ <- p; return x }
