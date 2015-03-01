@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs, MultiParamTypeClasses, FlexibleInstances, ExistentialQuantification #-}
-import Parser (Id, check, UQuery(..), UF(..), Binop(..), query)
+import Parser (Id, check, UQuery(..), UF(..), Binop(..), UFun(..), query)
 import Text.Parsec (parse, ParseError)
 import qualified Sq
 import Control.Monad.Error (throwError)
