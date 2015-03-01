@@ -10,6 +10,7 @@ import qualified Sq (DbModule, DbFunction, Named, FileType)
 import Control.Monad.Error (throwError)
 import Control.Applicative ((<$>))
 
+-- |Identifiers.
 type Id = String
 
 data TQuery a where
@@ -30,6 +31,7 @@ data TQuery a where
 data TF a where
     TF :: TQuery a -> TQuery b -> TF (a -> b)
 
+-- |Untyped syntax tree type for queries.
 data UQuery
     = UAppExpr UFun UQuery
     | UBind UQuery UF
@@ -54,6 +56,7 @@ data UFun
     | ULoc       -- ^ Line of code.
     | UName      
     | UArity
+    | UNull      -- ^ Prelude.null.
     | UFName String -- ^ Function identified by its name.
       deriving (Show, Eq)
 
@@ -64,6 +67,7 @@ data UF = UF Id UQuery
 -- |Types of the query language.
 data Typ
     = List Typ
+    | Poly -- ^ Polymorphic types.
     | File
     | Mod
     | Fun
@@ -131,7 +135,10 @@ checkFun f p | f == "name" = named p >> return  (UName, String)
 
 -- |Stores name, ast node, parameter type, return type of functions.
 funtypes :: [(Id, (UFun, Typ, Typ))]
-funtypes = [("functions", (UFunctions, Mod, List Fun)), ("arity", (UArity, Fun, Int))]
+funtypes = [("functions", (UFunctions, Mod, List Fun))
+           , ("arity", (UArity, Fun, Int))
+           , ("null", (UNull, List Poly, Bool))
+           ]
 
 -- |Checks whether the particular type have name function.
 named :: Typ -> Either String ()
@@ -139,6 +146,8 @@ named t | t `elem` [Mod,Fun] = return ()
         | otherwise = throwError $ "dont have name: " ++ show t
 
 expect :: Typ -> Typ -> Either String ()
+expect (List Poly) (List _b) = return ()
+expect (List _a) (List Poly) = return ()
 expect exp act | act == exp = return ()
                | otherwise = throwError $ "type error: expected: " ++ show exp ++ ", actual: " ++ show act
 
@@ -151,6 +160,7 @@ data Binop
     | Gte
       deriving Show
 
+--- Parsers:
 
 sqDef = L.haskellDef
         { T.opStart = oneOf "<=>"
