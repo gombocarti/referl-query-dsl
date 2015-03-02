@@ -1,4 +1,3 @@
-{-# LANGUAGE GADTs, MultiParamTypeClasses, FlexibleInstances, ExistentialQuantification #-}
 module SqDeep where
 
 import Parser (Id, check, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..), query)
