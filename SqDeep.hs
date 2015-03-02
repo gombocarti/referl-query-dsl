@@ -59,6 +59,7 @@ eval (UAppExpr f args) env = evalApp f args env
 eval UModules _env = Seq . map Mod $ Sq.modules
 eval UFiles _env = Seq . map File $ Sq.files
 eval UAtFunction _env = Fun Sq.atFunction
+eval UAtFile _env = File Sq.atFile
 eval UAtExpr _env = Expr Sq.atExpression
 eval (UReturn e) env = Seq $ [eval e env]
 eval (UStringLit s) _env = String s
@@ -89,11 +90,13 @@ evalApp UNot [arg] env = Bool $ not pred
     where Bool pred = eval arg env
 evalApp UNull [arg] env = Bool $ null xs
     where Seq xs = eval arg env
+evalApp UElem [a,b] env = Bool $ a' `elem` b'
+    where a'     = eval a env
+          Seq b' = eval b env
 evalApp UCalls [arg] env = Seq . map Fun $ Sq.fcalls f
     where Fun f = eval arg env
 evalApp UFunctions [UVarExpr v] env = Seq . map Fun $ Sq.functions m
     where Mod m = readVar v env
-
 
 readVar :: Id -> Env -> Value
 readVar v env = case lookup v env of

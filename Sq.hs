@@ -310,8 +310,8 @@ files = rootfiles root
 modules :: [DbModule]
 modules = rootmodules root
 
-atFile :: DbModule
-atFile = m1
+atFile :: DbFile
+atFile = head . mfile $ m1
 
 atFunction :: DbFunction
 atFunction = a
