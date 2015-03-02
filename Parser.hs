@@ -253,7 +253,7 @@ app :: Parser UQuery
 app = parens app
       <|> 
       (try $ do f <- identifier
-                args <- many1 (var <|> app)
+                args <- many1 (var <|> app <|> query)
                 return (UAppExpr (UFName f) args))
 
 -- query = { var <- query | query }
