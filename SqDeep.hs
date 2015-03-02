@@ -9,7 +9,7 @@ import Data.List (union)
 type Env = [(Id, Value)]
 
 class Wrap a where
-    wrap :: a -> Value
+    wrap   :: a -> Value
     unwrap :: Value -> a
 
 data Value
@@ -55,10 +55,7 @@ eval (UBind m (UF x body)) env = Seq . foldr step [] $ xs
       xs = [eval body ((x,a):env) | a <- as]
       step (Seq xs) acc = xs ++ acc
 eval (UVarExpr v) env = readVar v env
-eval (UAppExpr UFunctions (UVarExpr v)) env = Seq . map Fun $ Sq.functions m
-    where
-      Mod m = readVar v env
-eval (UAppExpr f arg) env = evalApp f arg env
+eval (UAppExpr f args) env = evalApp f args env
 eval UModules _env = Seq . map Mod $ Sq.modules
 eval UFiles _env = Seq . map File $ Sq.files
 eval UAtFunction _env = Fun Sq.atFunction
@@ -84,16 +81,19 @@ evalRel p1 Gte p2 = p1 >= p2
 evalRel p1 Lt  p2 = p1 <  p2
 evalRel p1 Lte p2 = p1 <= p2
 
-evalApp :: UFun -> UQuery -> Env -> Value
-evalApp UName arg env = String . Sq.name $ eval arg env
-evalApp UArity arg env = Int . Sq.arity $ f
+evalApp :: UFun -> [UQuery] -> Env -> Value
+evalApp UName [arg] env = String . Sq.name $ eval arg env
+evalApp UArity [arg] env = Int . Sq.arity $ f
     where Fun f = eval arg env
-evalApp UNot arg env = Bool $ not pred
+evalApp UNot [arg] env = Bool $ not pred
     where Bool pred = eval arg env
-evalApp UNull arg env = Bool $ null xs
+evalApp UNull [arg] env = Bool $ null xs
     where Seq xs = eval arg env
-evalApp UCalls arg env = Seq . map Fun $ Sq.fcalls f
+evalApp UCalls [arg] env = Seq . map Fun $ Sq.fcalls f
     where Fun f = eval arg env
+evalApp UFunctions [UVarExpr v] env = Seq . map Fun $ Sq.functions m
+    where Mod m = readVar v env
+
 
 readVar :: Id -> Env -> Value
 readVar v env = case lookup v env of
