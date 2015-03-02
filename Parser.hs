@@ -34,7 +34,7 @@ data TF a where
 
 -- |Untyped syntax tree type for queries.
 data UQuery
-    = UAppExpr UFun UQuery
+    = UAppExpr UFun [UQuery]
     | UBind UQuery UF
     | UReturn UQuery
     | UUnionExpr UQuery UQuery
@@ -64,6 +64,7 @@ data UFun
     | UCalls
     | UNull      -- ^ Prelude.null.
     | UNot       -- ^ Prelude.not
+    | UElem      -- ^ Prelude.elem 
     | UFName String -- ^ Function identified by its name.
     | UExported
     | URecursivity
@@ -72,6 +73,14 @@ data UFun
     | UParameters
       deriving (Show, Eq)
 
+data UFunTyp 
+    = Un (Typ -> Either String Typ)
+    | Bin (Typ -> Typ -> Either String Typ)
+
+-- data UFunArity = Un | Bin deriving Show
+
+data TErr = TErr Typ Typ
+
 -- |Untyped function.
 data UF = UF Id UQuery
           deriving Show
@@ -79,7 +88,6 @@ data UF = UF Id UQuery
 -- |Types of the query language.
 data Typ
     = List Typ
-    | Poly -- ^ Polymorphic types.
     | File
     | Mod
     | Fun
@@ -94,7 +102,13 @@ data Typ
     | Bool
     | Unit
     | FunRecursivity
+    | FilePath
       deriving (Show,Eq)
+
+runchk :: String -> Parser UQuery -> TEnv ->  Either String TUQuery
+runchk s parser env = case parse parser "" s of
+                        Right x -> check x env
+                        Left err -> throwError . show $ err
 
 getVar :: TEnv -> Id -> Either String Typ
 getVar env v = case lookup v env of
@@ -121,10 +135,11 @@ check UFiles _env = return $ UFiles ::: List File
 check UAtFile _env = return $ UAtFile ::: File
 check UAtFunction _env = return $ UAtFunction ::: Fun
 check UAtExpr _env = return $ UAtExpr ::: Expr
-check (UAppExpr (UFName f) arg) env = do
-  arg' ::: argt <- check arg env
-  (f', ft) <- checkFun f argt
-  return $ (UAppExpr f' arg') ::: ft
+check (UAppExpr (UFName f) args) env = do
+  targs' <- mapM (flip check env) args
+  let (args', argts') = unzip [(arg, argt) | arg ::: argt <- targs']
+  (f', ft) <- checkFun f argts'
+  return $ (UAppExpr f' args') ::: ft
 check (URelation op q1 q2) env = do
   q1' ::: t1 <- check q1 env
   q2' ::: t2 <- check q2 env
@@ -142,28 +157,43 @@ check (UUnionExpr q1 q2) env = do
   expect t1 t2
   return $ (UUnionExpr q1' q2') ::: t1
 
-checkFun :: Id -> Typ -> Either String (UFun, Typ)
-checkFun "name" p = named p >> return  (UName, String)
-checkFun "references" p = referencable p >> return (UReferences, List Expr)
-checkFun f p = case lookup f funtypes of
-                 Just (f', pt, rt) -> do
-                   expect pt p;
-                   return (f', rt)
-                 Nothing -> throwError $ "undefined function: " ++ f
+checkFun :: Id -> [Typ] -> Either String (UFun, Typ)
+checkFun "name" [p] = named p >> return  (UName, String)
+checkFun "name" _   = throwError $ "too many parameters: name"
+checkFun "references" [p] = referencable p >> return (UReferences, List Expr)
+checkFun "references" _   = throwError $ "too many parameters: references"
+checkFun f xs = case lookup f funtypes of
+                  Just (f', Un chk) -> case xs of
+                                         [] -> tooFewParams f 1
+                                         [p] -> do {t <- chk p; return (f', t)}
+                                         _ ->  tooManyParams f 1
+                  Just (f', Bin chk) -> case xs of
+                                          [] -> tooFewParams f 1
+                                          [_] -> tooFewParams f 1
+                                          [a, b] -> do {t <- chk a b; return (f', t)}
+                                          _ -> tooManyParams f 2
+                  Nothing -> throwError $ "undefined function: " ++ f
+
+tooManyParams :: Id -> Int -> Either String (UFun, Typ)
+tooManyParams f exp = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show exp ++ ")"
+
+tooFewParams :: Id -> Int -> Either String (UFun, Typ)
+tooFewParams f exp = throwError $ "too few parameters: " ++ f ++ "(expected " ++ show exp ++ ")"
 
 -- |Stores name, ast node, parameter type, return type of functions.
-funtypes :: [(Id, (UFun, Typ, Typ))]
-funtypes = [("functions", (UFunctions, Mod, List Fun))
-           , ("arity", (UArity, Fun, Int))
-           , ("null", (UNull, List Poly, Bool))
-           , ("calls", (UCalls, Fun, List Fun))
-           , ("path", (UPath, File, String))
-           , ("file", (UFile, Mod, List File))
-           , ("exported", (UExported, Fun, Bool))
-           , ("recursivity", (URecursivity, Fun, FunRecursivity))
-           , ("returns", (UReturns, Fun, Type))
-           , ("parameters", (UParameters, Fun, List Expr))
-           , ("not", (UNot, Bool, Bool))
+funtypes :: [(Id, (UFun, UFunTyp))]
+funtypes = [("functions", (UFunctions, Un (\t -> do {expect Mod t; return $ List Fun})))
+           , ("arity", (UArity, Un (\t -> do {expect Fun t; return Int})))
+           , ("null", (UNull, Un (\t -> case t of List _ -> return Bool; _ -> throwError "type error")))
+           , ("calls", (UCalls, Un (\t -> do {expect Fun t; return (List Fun)})))
+           , ("path", (UPath, Un (\t -> do {expect File t; return FilePath} )))
+           , ("file", (UFile, Un (\t -> do {expect Mod t; return $ List File} )))
+           , ("exported", (UExported, Un (\t -> do {expect Fun t; return Bool})))
+           , ("recursivity", (URecursivity, Un (\t -> do {expect Fun t; return FunRecursivity})))
+           , ("returns", (UReturns, Un (\t -> expectThen Fun t Type)))
+           , ("parameters", (UParameters, Un (\t -> expectThen Fun t (List Expr))))
+           , ("not", (UNot, Un (\t -> expectThen Bool t Bool)))
+           , ("elem", (UElem, Bin (\a b -> case b of List x -> expectThen a x Bool; _ -> throwError "type error")))
            ]
 
 -- |Checks whether the particular type have name function.
@@ -175,9 +205,10 @@ referencable :: Typ -> Either String ()
 referencable t | t `elem` [Fun,Record] = return ()
                | otherwise = throwError $ "not referencable :" ++ show t
 
+expectThen :: Typ -> Typ -> Typ -> Either String Typ
+expectThen exp act ret = do {expect exp act; return ret}
+
 expect :: Typ -> Typ -> Either String ()
-expect (List Poly) (List _b) = return ()
-expect (List _a) (List Poly) = return ()
 expect exp act | act == exp = return ()
                | otherwise = throwError $ "type error: expected: " ++ show exp ++ ", actual: " ++ show act
 
@@ -222,8 +253,8 @@ app :: Parser UQuery
 app = parens app
       <|> 
       (try $ do f <- identifier
-                arg <- var <|> app
-                return (UAppExpr (UFName f) arg))
+                args <- many1 (var <|> app)
+                return (UAppExpr (UFName f) args))
 
 -- query = { var <- query | query }
 
