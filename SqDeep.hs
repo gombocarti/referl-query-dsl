@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverlappingInstances #-}
 module SqDeep where
 
 import Parser (Id, check, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..), query)
@@ -20,6 +21,18 @@ instance Wrap Sq.DbModule where
 instance Wrap Sq.DbFunction where
     wrap           = Fun
     unwrap (Fun f) = f
+
+instance Wrap Sq.DbExpression where
+    wrap            = Expr
+    unwrap (Expr e) = e
+
+instance Wrap Int where
+    wrap           = Int
+    unwrap (Int n) = n
+
+instance Wrap String where
+    wrap              = String
+    unwrap (String s) = s
 
 instance Wrap a => Wrap [a] where
     wrap            = Seq . map wrap
