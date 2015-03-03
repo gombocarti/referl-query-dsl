@@ -151,7 +151,7 @@ class Referencable a where
     references :: a -> [DbExpression]
 
 instance Referencable DbFunction where
-    references = undefined
+    references = freferences
 
 instance Referencable DbVariable where
     references = vreferences
