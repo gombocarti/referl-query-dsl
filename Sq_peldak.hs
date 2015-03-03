@@ -30,7 +30,7 @@ q4 = [f | m <- modules, f <- functions m, exported f, arity f == 0]
 
 -- @file.funs.calls 
 q5 :: [DbFunction]
-q5 = [c | f <- functions atFile
+q5 = [c | f <- functions atModule
         , c <- calls f]
 
 -- mods[name ~ "[^test].*" ]
@@ -71,11 +71,11 @@ q12 = [f | m <- modules, f <- functions m, l <- loc f, l > 20]
 
 -- @file.funs[max_depth_of_cases > 2]
 q13 :: [DbFunction]
-q13 = [f | f <- functions atFile, m <- max [depth e | e <- expressions f, typeOf e == Case], m > 2]
+q13 = [f | f <- functions atModule, m <- max [depth e | e <- expressions f, typeOf e == Case], m > 2]
 
 -- @file.max_depth_of_cases
 q14 :: [Int]
-q14 = max [ depth e | f <- functions atFile, e <- expressions f, typeOf e == Case]
+q14 = max [ depth e | f <- functions atModule, e <- expressions f, typeOf e == Case]
 
 -- mods.funs[is_tail_recursive == non_tail_rec]
 q15 :: [DbFunction]
@@ -116,7 +116,7 @@ q23 = [f | m <- modules, f <- functions m, name f `elem` [name c | c <- calls f]
  
 -- @file.functions.line_of_code:average
 q24 :: Int
-q24 = average [l | f <- functions atFile, l <- loc f]
+q24 = average [l | f <- functions atModule, l <- loc f]
 
 -- mods.funs[.calls any_in mods[name=m1].funs]
 q25 :: [DbFunction]

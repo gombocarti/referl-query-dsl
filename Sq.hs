@@ -311,7 +311,10 @@ modules :: [DbModule]
 modules = rootmodules root
 
 atFile :: DbFile
-atFile = head . mfile $ m1
+atFile = head . mfile $ atModule
+
+atModule :: DbModule
+atModule = m1
 
 atFunction :: DbFunction
 atFunction = a
