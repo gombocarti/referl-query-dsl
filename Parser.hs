@@ -10,6 +10,7 @@ import qualified Sq (DbModule, DbFunction, Named, FileType)
 import Control.Monad.Error (throwError)
 import Control.Applicative ((<$>))
 import Prelude hiding (filter)
+import Data.Maybe (fromJust)
 
 -- |Identifiers.
 type Id = String
@@ -46,6 +47,7 @@ data UQuery
     | UModules
     | UFiles
     | UAtFile
+    | UAtModule 
     | UAtFunction
     | UAtExpr
       deriving Show
@@ -54,6 +56,8 @@ data UQuery
 data UFun
     = UFunctions -- ^ Functions of a module.
     | UPath      -- ^ Path of a loaded file.
+    | UDir       -- ^ Directory containing a file.
+    | UFileName  -- ^ Name of a loaded file.
     | UIsModule  -- ^ True if the file contains a module.
     | UFile      -- ^ File of a module.
     | UExports   -- ^ Exported functions of a module.
@@ -65,12 +69,18 @@ data UFun
     | UNull      -- ^ Prelude.null.
     | UNot       -- ^ Prelude.not
     | UElem      -- ^ Prelude.elem 
+    | UAllIn
+    | UAnyIn
     | UFName String -- ^ Function identified by its name.
     | UExported
     | URecursivity
     | UReturns
     | UReferences
     | UParameters
+    | UOrigin
+    | UReach
+    | UType
+    | UExpressions
       deriving (Show, Eq)
 
 data UFunTyp 
@@ -119,6 +129,7 @@ type TEnv = [(Id,Typ)]
 
 data TUQuery = UQuery ::: Typ deriving Show
 
+-- |Type-checks and transforms untyped queries.
 check :: UQuery -> TEnv -> Either String TUQuery
 check (UBind m (UF x body)) e = do
   m' ::: List tm <- check m e
@@ -133,17 +144,18 @@ check (UVarExpr v) e = do
 check UModules _env = return $ UModules ::: List Mod
 check UFiles _env = return $ UFiles ::: List File
 check UAtFile _env = return $ UAtFile ::: File
+check UAtModule _env = return $ UAtModule ::: Mod
 check UAtFunction _env = return $ UAtFunction ::: Fun
 check UAtExpr _env = return $ UAtExpr ::: Expr
 check (UAppExpr (UFName f) args) env = do
   targs' <- mapM (flip check env) args
-  let (args', argts') = unzip [(arg, argt) | arg ::: argt <- targs']
-  (f', ft) <- checkFun f argts'
+  let (args', argtypes') = unzip [(arg, argt) | arg ::: argt <- targs']
+  (f', ft) <- checkFun f argtypes'
   return $ (UAppExpr f' args') ::: ft
 check (URelation op q1 q2) env = do
   q1' ::: t1 <- check q1 env
   q2' ::: t2 <- check q2 env
-  expect t1 t2
+  checkRel op t1 t2
   return $ (URelation op q1' q2') ::: Bool
 check (UGuard p) env = do
   p' ::: t <- check p env
@@ -157,6 +169,7 @@ check (UUnionExpr q1 q2) env = do
   expect t1 t2
   return $ (UUnionExpr q1' q2') ::: t1
 
+-- |Maps function name to tree node, and checks the argument types.
 checkFun :: Id -> [Typ] -> Either String (UFun, Typ)
 checkFun "name" [p] = named p >> return  (UName, String)
 checkFun "name" _   = throwError $ "too many parameters: name"
@@ -175,42 +188,67 @@ checkFun f xs = case lookup f funtypes of
                   Nothing -> throwError $ "undefined function: " ++ f
 
 tooManyParams :: Id -> Int -> Either String (UFun, Typ)
-tooManyParams f exp = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show exp ++ ")"
+tooManyParams f expected = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show expected ++ ")"
 
 tooFewParams :: Id -> Int -> Either String (UFun, Typ)
-tooFewParams f exp = throwError $ "too few parameters: " ++ f ++ "(expected " ++ show exp ++ ")"
+tooFewParams f expected = throwError $ "too few parameters: " ++ f ++ "(expected " ++ show expected ++ ")"
 
--- |Stores name, ast node, parameter type, return type of functions.
+-- |Associates function name with ast node and function which checks argument types.
 funtypes :: [(Id, (UFun, UFunTyp))]
-funtypes = [("functions", (UFunctions, Un (\t -> do {expect Mod t; return $ List Fun})))
-           , ("arity", (UArity, Un (\t -> expectThen Fun t Int)))
-           , ("null", (UNull, Un (\t -> case t of List _ -> return Bool; _ -> throwError "type error")))
-           , ("calls", (UCalls, Un (\t -> expectThen Fun t (List Fun))))
-           , ("path", (UPath, Un (\t -> expectThen File t FilePath)))
-           , ("file", (UFile, Un (\t -> expectThen Mod t (List File))))
-           , ("exported", (UExported, Un (\t -> expectThen Fun t Bool)))
+funtypes = [ ("functions",   (UFunctions, Un (\t -> do {expect Mod t; return $ List Fun})))
+           , ("arity",       (UArity, Un (\t -> expectThen Fun t Int)))
+           , ("null",        (UNull, Un (\t -> case t of List _ -> return Bool; _ -> throwError "type error")))
+           , ("calls",       (UCalls, Un (\t -> expectThen Fun t (List Fun))))
+           , ("path",        (UPath, Un (\t -> expectThen File t FilePath)))
+           , ("directory",   (UDir, Un (\t -> expectThen File t FilePath)))
+           , ("filename",    (UFileName, Un (\t -> expectThen File t FilePath)))
+           , ("file",        (UFile, Un (\t -> expectThen Mod t (List File))))
+           , ("exported",    (UExported, Un (\t -> expectThen Fun t Bool)))
            , ("recursivity", (URecursivity, Un (\t -> expectThen Fun t FunRecursivity)))
-           , ("returns", (UReturns, Un (\t -> expectThen Fun t Type)))
-           , ("parameters", (UParameters, Un (\t -> expectThen Fun t (List Expr))))
-           , ("not", (UNot, Un (\t -> expectThen Bool t Bool)))
-           , ("elem", (UElem, Bin (\a b -> case b of List x -> expectThen a x Bool; _ -> throwError "type error")))
+           , ("returns",     (UReturns, Un (\t -> expectThen Fun t Type)))
+           , ("parameters",  (UParameters, Un (\t -> expectThen Fun t (List Expr))))
+           , ("not",         (UNot, Un (\t -> expectThen Bool t Bool)))
+           , ("elem",        (UElem, Bin (\a b -> case b of List x -> expectThen a x Bool; _ -> throwError "type error")))
+           , ("all_in",      (UAllIn, Bin (\a b -> case b of List _ -> expectThen a b Bool; _ -> throwError "type error")))
+           , ("any_in",      (UAnyIn, Bin (\a b -> case b of List _ -> expectThen a b Bool; _ -> throwError "type error")))
+           , ("origin",      (UOrigin, Un (\t -> expectThen Expr t (List Expr))))
+           , ("reach",       (UReach, Un (\t -> expectThen Expr t (List Expr))))
            ]
 
--- |Checks whether the particular type have name function.
+checkRel :: Binop -> Typ -> Typ -> Either String ()
+checkRel op a b = do
+  let typeCheck = fromJust . lookup op $ relations
+  typeCheck a b
+
+relations :: [(Binop, Typ -> Typ -> Either String ())]
+relations = [ (Eq, expect) 
+            , (NEq, expect)
+            , (Lt, expect)
+            , (Lte, expect)
+            , (Gt, expect)
+            , (Gte, expect)
+            , (Regexp, \a b -> do {expect String a; expect String b})
+            ]
+
+-- |Decides whether the particular type have name function.
 named :: Typ -> Either String ()
 named t | t `elem` [File,Mod,Fun,Record] = return ()
         | otherwise = throwError $ "dont have name: " ++ show t
 
+-- |Decides whether the particular type is referencable.
 referencable :: Typ -> Either String ()
 referencable t | t `elem` [Fun,Record] = return ()
                | otherwise = throwError $ "not referencable :" ++ show t
 
+-- | Decides whether actual argument type equals to expected type. If it does, returns the third argument.
 expectThen :: Typ -> Typ -> Typ -> Either String Typ
-expectThen exp act ret = do {expect exp act; return ret}
+expectThen expected actual returnType = do {expect expected actual; return returnType}
 
+-- | Decides whether actual argument type equals to expected type. If it does not, throws type error.
 expect :: Typ -> Typ -> Either String ()
-expect exp act | act == exp = return ()
-               | otherwise = throwError $ "type error: expected: " ++ show exp ++ ", actual: " ++ show act
+expect expected actual 
+    | actual == expected = return ()
+    | otherwise = throwError $ "type error: expected: " ++ show expected ++ ", actual: " ++ show actual
 
 data Binop
     = Eq
@@ -219,7 +257,8 @@ data Binop
     | Lte
     | Gt
     | Gte
-      deriving Show
+    | Regexp
+      deriving (Show,Eq)
 
 --- Parsers:
 
@@ -247,14 +286,21 @@ query :: Parser UQuery
 query = whiteSpace *> braces bind
 
 var :: Parser UQuery
-var = UVarExpr <$> identifier
+var = UVarExpr <$> identifier <?> "variable"
 
 app :: Parser UQuery
 app = parens app
       <|> 
       (try $ do f <- identifier
-                args <- many1 (var <|> app <|> query)
+                args <- many1 (initial <|> var <|> relation <|> app <|> query)
                 return (UAppExpr (UFName f) args))
+      <?> "function application"
+
+initial :: Parser UQuery
+initial = modules <|> atModule <|> atFile <?> "initial selector"
+
+atModule :: Parser UQuery
+atModule = reserved "atModule" `as` UAtModule
 
 -- query = { var <- query | query }
 
@@ -266,7 +312,7 @@ bind =  do
   return (UBind x (UF v rest))
 
 ret :: Parser UQuery
-ret = vline *> (UReturn <$> (app <|> var <|> query))
+ret = UReturn <$> (app <|> var <|> query)
 
 vline :: Parser String
 vline = symbol "|"
@@ -278,7 +324,7 @@ bindable :: Parser UQuery
 bindable = modules <|> app <|> query
 
 following :: Parser UQuery
-following = (comma *> (filter <|> bind)) <|> ret
+following = (comma *> (filter <|> bind)) <|> (vline *> ret)
 
 modules :: Parser UQuery
 modules = reserved "modules" `as` UModules
@@ -290,12 +336,14 @@ atFunction :: Parser UQuery
 atFunction = reserved "atFunction" `as` UAtFunction
 
 relation :: Parser UQuery
-relation = do rel <- try $ do 
+relation = parens relation <|>
+           do rel <- try $ do 
                        a1 <- relOperand
                        rel <- relop
                        return $ URelation rel a1
               a2 <- relOperand
               return $ rel a2
+           <?> "relation"
 
 filter :: Parser UQuery
 filter = do 
@@ -315,10 +363,10 @@ numLit = do
   return $ UNumLit (fromIntegral n)
 
 relop :: Parser Binop
-relop = (eq <|> neq <|> lte <|> lt <|> gte <|> gt) <* spaces
+relop = (eq <|> neq <|> lte <|> lt <|> gte <|> gt <|> regexp) <* spaces
 
 eq :: Parser Binop
-eq = symbol "==" `as` Eq
+eq = try $ symbol "==" `as` Eq
 
 neq :: Parser Binop
 neq = symbol "/=" `as` NEq
@@ -335,9 +383,9 @@ gt = symbol ">" `as` Gt
 gte :: Parser Binop
 gte = symbol ">=" `as` Gte
 
-relations :: [(String, Binop)]
-relations = [("==", Eq), ("<", Lt), ("<=", Lte), (">", Gt), (">=", Gte), ("/=", NEq)]
-
+regexp :: Parser Binop
+regexp = symbol "=~" `as` Regexp
+         
 as :: Parser a -> b -> Parser b
 as p x = do { _ <- p; return x }
 
