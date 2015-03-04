@@ -94,7 +94,7 @@ eval (UBind m (UF x body)) env = Seq . foldr step [] $ xs
       xs = [eval body ((x,a):env) | a <- as]
       step (Seq xs) acc = xs ++ acc
 eval (UVarExpr v) env = readVar v env
-eval (UAppExpr f args) env = evalApp f args env
+eval (UAppExpr f args) env = evalApp f (map (flip eval []) args)
 eval UModules _env = Seq . map Mod $ Sq.modules
 eval UFiles _env = Seq . map File $ Sq.files
 eval UAtFunction _env = Fun Sq.atFunction
@@ -125,43 +125,26 @@ evalRel a Regexp b = s =~ regex
     where String s     = a
           String regex = b
 
-evalApp :: UFun -> [UQuery] -> Env -> Value
-evalApp UName [arg] env = String . Sq.name $ eval arg env
-evalApp UArity [arg] env = Int . Sq.arity $ f
-    where Fun f = eval arg env
-evalApp UNot [arg] env = Bool $ not pred
-    where Bool pred = eval arg env
-evalApp UNull [arg] env = Bool $ null xs
-    where Seq xs = eval arg env
-evalApp UElem [a,b] env = Bool $ a' `elem` b'
-    where a'     = eval a env
-          Seq b' = eval b env
-evalApp UAllIn [a,b] env = Bool $ a' `elem` b'
-    where a'     = eval a env
-          Seq b' = eval b env
-evalApp UAnyIn [a,b] env = Bool $ as `Sq.any_in` bs
-    where Seq as = eval a env
-          Seq bs = eval b env
-evalApp UCalls [arg] env = Seq . map Fun $ Sq.fcalls f
-    where Fun f = eval arg env
-evalApp UFunctions [arg] env = Seq . map Fun $ Sq.functions m
-    where Mod m = eval arg env
-evalApp UExported [arg] env = Bool . Sq.fexported $ f
-    where Fun f = eval arg env
-evalApp UPath [arg] env = Path . Sq.fpath $ f
-    where File f = eval arg env
-evalApp UDir [arg] env = Path . Sq.dir $ f
-    where File f = eval arg env
-evalApp UFileName [arg] env = Path . Sq.filename $ f
-    where File f = eval arg env
-evalApp UTypeOf [arg] env = case eval arg env of 
-                              FunParam p -> Type . Sq.fptype $ p
-                              RecField f -> Type . Sq.fieldType $ f
-                              Expr e -> ExprType . Sq.etype $ e
-evalApp UReturns [arg] env = Seq . map Type . Sq.returns $ f
-    where Fun f = eval arg env
-evalApp UOrigin [arg] env = Seq . map Expr . Sq.origin . unwrap $ expr
-    where expr = eval arg env
+evalApp :: UFun -> [Value] -> Value
+evalApp UName [arg] = String . Sq.name $ arg
+evalApp UArity [Fun f] = Int . Sq.arity $ f
+evalApp UNot [Bool pred] = Bool $ not pred
+evalApp UNull [Seq xs] = Bool $ null xs
+evalApp UElem [a,Seq bs] = Bool $ a `elem` bs
+evalApp UAllIn [a,Seq bs] = Bool $ a `elem` bs
+evalApp UAnyIn [Seq as,Seq bs] = Bool $ as `Sq.any_in` bs
+evalApp UCalls [Fun f] = Seq . map Fun $ Sq.fcalls f
+evalApp UFunctions [Mod m] = Seq . map Fun $ Sq.functions m
+evalApp UExported [Fun f] = Bool . Sq.fexported $ f
+evalApp UPath [File f] = Path . Sq.fpath $ f
+evalApp UDir [File f] = Path . Sq.dir $ f
+evalApp UFileName [File f] = Path . Sq.filename $ f
+evalApp UTypeOf [arg] = case arg of 
+                          FunParam p -> Type . Sq.fptype $ p
+                          RecField f -> Type . Sq.fieldType $ f
+                          Expr e -> ExprType . Sq.etype $ e
+evalApp UReturns [Fun f] = Seq . map Type . Sq.returns $ f
+evalApp UOrigin [Expr expr] = Seq . map Expr . Sq.origin $ expr
 
 readVar :: Id -> Env -> Value
 readVar v env = case lookup v env of
