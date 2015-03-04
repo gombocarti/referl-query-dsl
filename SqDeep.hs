@@ -26,6 +26,10 @@ instance Wrap Sq.DbExpression where
     wrap            = Expr
     unwrap (Expr e) = e
 
+instance Wrap Sq.DbType where
+    wrap            = Type
+    unwrap (Type t) = t
+
 instance Wrap Int where
     wrap           = Int
     unwrap (Int n) = n
@@ -43,14 +47,20 @@ data Value
     | Mod Sq.DbModule
     | Fun Sq.DbFunction
     | Expr Sq.DbExpression
+    | Type Sq.DbType
+    | FunParam Sq.DbFunctionParam
+    | Rec Sq.DbRecord
+    | RecField Sq.DbRecordField
+    | ExprType Sq.ExprType
     | String String
     | Int Int
     | Bool Bool
     | Unit
     | Path FilePath
     | Seq [Value]
-      deriving Eq
+      deriving (Eq,Show)
 
+{-
 instance Show Value where
     show (File f) = Sq.fpath f
     show (Mod m) = Sq.name m
@@ -61,6 +71,7 @@ instance Show Value where
     show (String s) = s
     show (Bool b) = show b
     show Unit = "()"
+-}
 
 instance Ord Value where
     (Int a) <= (Int b) = a <= b
@@ -143,7 +154,14 @@ evalApp UDir [arg] env = Path . Sq.dir $ f
     where File f = eval arg env
 evalApp UFileName [arg] env = Path . Sq.filename $ f
     where File f = eval arg env
--- evalApp UReturns [arg] env = 
+evalApp UTypeOf [arg] env = case eval arg env of 
+                              FunParam p -> Type . Sq.fptype $ p
+                              RecField f -> Type . Sq.fieldType $ f
+                              Expr e -> ExprType . Sq.etype $ e
+evalApp UReturns [arg] env = Seq . map Type . Sq.returns $ f
+    where Fun f = eval arg env
+evalApp UOrigin [arg] env = Seq . map Expr . Sq.origin . unwrap $ expr
+    where expr = eval arg env
 
 readVar :: Id -> Env -> Value
 readVar v env = case lookup v env of

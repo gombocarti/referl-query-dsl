@@ -69,6 +69,7 @@ data UFun
     | UNull      -- ^ Prelude.null.
     | UNot       -- ^ Prelude.not
     | UElem      -- ^ Prelude.elem 
+    | UUnion     -- ^ Data.List.union
     | UAllIn
     | UAnyIn
     | UFName String -- ^ Function identified by its name.
@@ -79,7 +80,7 @@ data UFun
     | UParameters
     | UOrigin
     | UReach
-    | UType
+    | UTypeOf
     | UExpressions
       deriving (Show, Eq)
 
@@ -104,9 +105,12 @@ data Typ
     | Expr
     | Macro
     | Record
+    | RecordField
     | Spec
     | SpecParam
-    | Type
+    | FunParam
+    | Type    -- ^ Sq.DbType
+    | ExprType
     | String
     | Int
     | Bool
@@ -171,21 +175,16 @@ check (UUnionExpr q1 q2) env = do
 
 -- |Maps function name to tree node, and checks the argument types.
 checkFun :: Id -> [Typ] -> Either String (UFun, Typ)
-checkFun "name" [p] = named p >> return  (UName, String)
-checkFun "name" _   = throwError $ "too many parameters: name"
-checkFun "references" [p] = referencable p >> return (UReferences, List Expr)
-checkFun "references" _   = throwError $ "too many parameters: references"
-checkFun f xs = case lookup f funtypes of
+checkFun f xs = case funtype f of
                   Just (f', Un chk) -> case xs of
                                          [] -> tooFewParams f 1
                                          [p] -> do {t <- chk p; return (f', t)}
                                          _ ->  tooManyParams f 1
                   Just (f', Bin chk) -> case xs of
-                                          [] -> tooFewParams f 1
-                                          [_] -> tooFewParams f 1
-                                          [a, b] -> do {t <- chk a b; return (f', t)}
-                                          _ -> tooManyParams f 2
-                  Nothing -> throwError $ "undefined function: " ++ f
+                                          [a, b]  -> do {t <- chk a b; return (f', t)}
+                                          _:_:_:_ -> tooManyParams f 2
+                                          _ -> tooFewParams f 1
+                  Nothing -> throwError $ "unknown function: " ++ f
 
 tooManyParams :: Id -> Int -> Either String (UFun, Typ)
 tooManyParams f expected = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show expected ++ ")"
@@ -194,26 +193,49 @@ tooFewParams :: Id -> Int -> Either String (UFun, Typ)
 tooFewParams f expected = throwError $ "too few parameters: " ++ f ++ "(expected " ++ show expected ++ ")"
 
 -- |Associates function name with ast node and function which checks argument types.
-funtypes :: [(Id, (UFun, UFunTyp))]
-funtypes = [ ("functions",   (UFunctions, Un (\t -> do {expect Mod t; return $ List Fun})))
-           , ("arity",       (UArity, Un (\t -> expectThen Fun t Int)))
-           , ("null",        (UNull, Un (\t -> case t of List _ -> return Bool; _ -> throwError "type error")))
-           , ("calls",       (UCalls, Un (\t -> expectThen Fun t (List Fun))))
-           , ("path",        (UPath, Un (\t -> expectThen File t FilePath)))
-           , ("directory",   (UDir, Un (\t -> expectThen File t FilePath)))
-           , ("filename",    (UFileName, Un (\t -> expectThen File t FilePath)))
-           , ("file",        (UFile, Un (\t -> expectThen Mod t (List File))))
-           , ("exported",    (UExported, Un (\t -> expectThen Fun t Bool)))
-           , ("recursivity", (URecursivity, Un (\t -> expectThen Fun t FunRecursivity)))
-           , ("returns",     (UReturns, Un (\t -> expectThen Fun t Type)))
-           , ("parameters",  (UParameters, Un (\t -> expectThen Fun t (List Expr))))
-           , ("not",         (UNot, Un (\t -> expectThen Bool t Bool)))
-           , ("elem",        (UElem, Bin (\a b -> case b of List x -> expectThen a x Bool; _ -> throwError "type error")))
-           , ("all_in",      (UAllIn, Bin (\a b -> case b of List _ -> expectThen a b Bool; _ -> throwError "type error")))
-           , ("any_in",      (UAnyIn, Bin (\a b -> case b of List _ -> expectThen a b Bool; _ -> throwError "type error")))
-           , ("origin",      (UOrigin, Un (\t -> expectThen Expr t (List Expr))))
-           , ("reach",       (UReach, Un (\t -> expectThen Expr t (List Expr))))
-           ]
+funtype :: Id -> Maybe (UFun, UFunTyp)
+funtype "functions" = Just (UFunctions, Un tcheck)
+    where tcheck t = expectThen Mod t (List Fun)
+funtype "name" = Just (UName, Un tcheck)
+    where tcheck t = do named t
+                        return String
+funtype "arity" = Just (UArity, Un tcheck)
+    where tcheck t = expectThen Fun t Int
+funtype "null" = Just (UNull, Un tcheck)
+    where tcheck t = case t of
+                       List _ -> return Bool
+                       _ -> throwError "type error"
+funtype "calls" = Just (UCalls, Un (\t -> expectThen Fun t (List Fun)))
+funtype "path" = Just (UPath, Un (\t -> expectThen File t FilePath))
+funtype "directory" = Just (UDir, Un (\t -> expectThen File t FilePath))
+funtype "filename" = Just (UFileName, Un (\t -> expectThen File t FilePath))
+funtype "file" = Just (UFile, Un (\t -> expectThen Mod t (List File)))
+funtype "exported" = Just (UExported, Un (\t -> expectThen Fun t Bool))
+funtype "recursivity" = Just (URecursivity, Un (\t -> expectThen Fun t FunRecursivity))
+funtype "references" = Just (UReferences, Un tcheck)
+    where tcheck t = do referencable t 
+                        return (List Expr)
+funtype "returns" = Just (UReturns, Un (\t -> expectThen Fun t Type))
+funtype "parameters" = Just (UParameters, Un (\t -> expectThen Fun t (List Expr)))
+funtype "type" = Just (UTypeOf, Un tcheck)
+    where tcheck t = do typeable t 
+                        return (typeOfTypefun t)
+funtype "not" = Just (UNot, Un (\t -> expectThen Bool t Bool))
+funtype "u"   = Just (UUnion, Bin tcheck)
+    where tcheck (List a) (List b) = expectThen a b (List a)
+          tcheck _  _ = throwError "type error"
+funtype "elem" = Just (UElem, Bin tcheck)
+    where tcheck a (List x) = expectThen a x Bool
+          tcheck _ _        = throwError "type error"
+funtype "all_in" = Just (UAllIn, Bin tcheck)
+    where tcheck a@(List _) b@(List _) = expectThen a b Bool; 
+          tcheck _ _                   = throwError "type error"
+funtype "any_in" = Just (UAnyIn, Bin tcheck)
+    where tcheck a@(List _) b@(List _) = expectThen a b Bool; 
+          tcheck _ _                   = throwError "type error"
+funtype "origin" = Just (UOrigin, Un (\t -> expectThen Expr t (List Expr)))
+funtype "reach" = Just (UReach, Un (\t -> expectThen Expr t (List Expr)))
+funtype _  = Nothing
 
 checkRel :: Binop -> Typ -> Typ -> Either String ()
 checkRel op a b = do
@@ -238,7 +260,16 @@ named t | t `elem` [File,Mod,Fun,Record] = return ()
 -- |Decides whether the particular type is referencable.
 referencable :: Typ -> Either String ()
 referencable t | t `elem` [Fun,Record] = return ()
-               | otherwise = throwError $ "not referencable :" ++ show t
+               | otherwise = throwError $ "not referencable: " ++ show t
+
+typeable :: Typ -> Either String ()
+typeable t | t `elem` [FunParam, Expr,RecordField] = return ()
+           | otherwise = throwError $ "not typeable: " ++ show t
+
+typeOfTypefun :: Typ -> Typ
+typeOfTypefun RecordField = Type
+typeOfTypefun Expr        = ExprType
+typeOfTypefun FunParam    = Type
 
 -- | Decides whether actual argument type equals to expected type. If it does, returns the third argument.
 expectThen :: Typ -> Typ -> Typ -> Either String Typ
@@ -262,7 +293,7 @@ data Binop
 
 --- Parsers:
 
-sqDef = L.haskellDef
+sqDef = L.haskellStyle
         { T.opStart = oneOf "<=>"
         , T.opLetter = T.opStart sqDef
         }
@@ -290,14 +321,15 @@ var = UVarExpr <$> identifier <?> "variable"
 
 app :: Parser UQuery
 app = parens app
-      <|> 
-      (try $ do f <- identifier
-                args <- many1 (initial <|> var <|> relation <|> app <|> query)
-                return (UAppExpr (UFName f) args))
+      <|>
+      try (do f <- identifier
+              args <- many1 argument
+              return (UAppExpr (UFName f) args))
       <?> "function application"
+          where argument = initial <|> var <|> relation <|> app <|> query
 
 initial :: Parser UQuery
-initial = modules <|> atModule <|> atFile <?> "initial selector"
+initial = modules <|> atModule <|> atFile <|> atExpression <?> "initial selector"
 
 atModule :: Parser UQuery
 atModule = reserved "atModule" `as` UAtModule
@@ -321,7 +353,7 @@ bindop :: Parser String
 bindop = symbol "<-"
 
 bindable :: Parser UQuery
-bindable = modules <|> app <|> query
+bindable = initial <|> app <|> query
 
 following :: Parser UQuery
 following = (comma *> (filter <|> bind)) <|> (vline *> ret)
@@ -335,6 +367,9 @@ atFile = reserved "atFile" `as` UAtFile
 atFunction :: Parser UQuery
 atFunction = reserved "atFunction" `as` UAtFunction
 
+atExpression :: Parser UQuery
+atExpression = reserved "atExpression" `as` UAtExpr
+
 relation :: Parser UQuery
 relation = parens relation <|>
            do rel <- try $ do 
@@ -346,7 +381,7 @@ relation = parens relation <|>
            <?> "relation"
 
 filter :: Parser UQuery
-filter = do 
+filter = do
   f <- relation <|> app
   rest <- following
   return (UBind (UGuard f) (UF "()" rest))
