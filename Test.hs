@@ -4,13 +4,16 @@ import qualified SqDeep as D (Value(..), run, Wrap(..))
 import Sq hiding ((==), Int)
 import Parser hiding (check)
 import Text.Parsec (parse)
+import Control.Exception (catch, SomeException)
 
-tests :: [(String, D.Value)]
+type TestCase = (String, D.Value)
+
+tests :: [TestCase]
 tests = [ ("{m <- modules, f <- functions m | f}", D.wrap [a,b,f]) -- q1
         -- q2
-        , ("{m <- modules, name m == \"mymod\", f <- functions m, name f == \"f\", p <- parameters f | typeOf p}", D.Seq [])
+        , ("{m <- modules, name m == \"mymod\", f <- functions m, name f == \"f\", p <- parameters f | type p}", D.Seq [])
         -- q3
-        , ("{m <- modules, name m == \"m1\", f <- functions m, name f == \"a\" | returns f}", D.wrap [a])
+        , ("{m <- modules, name m == \"m1\", f <- functions m, name f == \"a\" | returns f}", D.Seq [D.wrap . freturns $ a])
         -- q4
         , ("{m <- modules, f <- functions m, exported f, arity f == 0 | f}", D.Seq [])
         -- q5
@@ -32,9 +35,9 @@ tests = [ ("{m <- modules, f <- functions m | f}", D.wrap [a,b,f]) -- q1
         -- q12
         , ("{m <- modules, f <- functions m, l <- loc f, l < 20 | f)", D.wrap [a,b,f])
         -- q13
-        , ("{f <- functions atModule, m <- max [depth e | e <- expressions f, typeOf e == Case], m > 2 | f}", D.Seq [])
+        , ("{f <- functions atModule, m <- max [depth e | e <- expressions f, type e == Case], m > 2 | f}", D.Seq [])
         -- q14
-        , ("max {f <- functions atModule, e <- expressions f, typeOf e == Case | depth e}", D.Seq [])
+        , ("max {f <- functions atModule, e <- expressions f, type e == Case | depth e}", D.Seq [])
         -- q15
         , ("{m <- modules, f <- functions m, recursivity f == NonTailRecursive | f}", D.Seq [])
         -- q16
@@ -46,11 +49,11 @@ tests = [ ("{m <- modules, f <- functions m | f}", D.wrap [a,b,f]) -- q1
         -- q20
         , ("{m <- modules, f <- functions m, c <- iteration 4 calls f | c}", D.Seq [])
         -- q21
-        , ("{m <- modules, f <- functions m, f `elem` calls f | f}", D.Seq [])
+        , ("{m <- modules, f <- functions m, f € calls f | f}", D.Seq [])
         -- q22
         , ("{m <- modules, f <- functions m, not (null (calls f)) | f}", D.wrap [a])
         -- q23
-        , ("{m <- modules, f <- functions m, name f `elem` {name c | c <- calls f} | f}", D.Seq [])
+        , ("{m <- modules, f <- functions m, name f € {name c | c <- calls f} | f}", D.Seq [])
         -- q24
         , ("average {f <- functions atModule, l <- loc f| l}", D.wrap (2 :: Int))
         -- q25
@@ -58,17 +61,23 @@ tests = [ ("{m <- modules, f <- functions m | f}", D.wrap [a,b,f]) -- q1
         -- q26
         , ("{m <- modules, name m == \"m1\", f <- (functions m `u` {c | f <- functions m , c <- calls f} | name f}", D.wrap . map fname $ [a,b])
         -- q27
-        , ("{m1 <- modules, name m1 == \"m1\" , m2 <- modules, name m2 == \"m2\" , f <- (functions m1) `u` (functions m2)}", D.wrap [a,b,f])
+        , ("{m1 <- modules, name m1 == \"m1\" , m2 <- modules, name m2 == \"m2\" , f <- (functions m1) ÷ (functions m2)}", D.wrap [a,b,f])
         -- q28
         , ("{m <- modules, f <- mfile m | path f}", D.wrap . map path . concatMap mfile $ [m1,m2])
         ]
 
-check :: IO ()
-check = run tests
+check :: [TestCase] -> IO ()
+check ts = run ts 0 0
     where 
-      run [] = putStrLn "all tests passed"
-      run ((t,expected):ts) = case D.run t of
-                         Right actual -> if actual == expected
-                                         then run ts
-                                         else putStrLn $ "failed test: " ++ t ++ "\nexpected: " ++ show expected ++ "\nactual: " ++ show actual
-                         Left err -> putStrLn $ "failed test: " ++ t ++ "\nreason: " ++ err
+      run [] p f = putStrLn $ "passed " ++ show p ++ " failed " ++ show f
+      run ((t,expected):ts) p f= 
+          (case D.run t of
+            Right actual -> if actual == expected
+                            then run ts (p + 1) f
+                            else do
+                              putStrLn $ "failed test: " ++ t ++ "\nexpected: " ++ show expected ++ "\nactual: " ++ show actual
+                              run ts p (f + 1)
+            Left err -> do 
+              putStrLn $ "failed test: " ++ t ++ "\nreason: " ++ err
+              run ts p (f + 1))
+          `catch` (\ e -> putStrLn $ "failed test: " ++ t ++ "\nreason: " ++ show (e :: SomeException)) 
