@@ -159,8 +159,8 @@ instance Referencable DbVariable where
 instance Referencable DbRecord where
     references = rreferences
 
-returns :: DbFunction -> DbType
-returns = undefined
+returns :: DbFunction -> [DbType]
+returns = freturns
 
 exported :: DbFunction -> Bool
 exported = fexported
@@ -212,7 +212,7 @@ body = ebody
 bound :: DbVariable -> Either DbExpression DbFunction
 bound = undefined
 
-fields :: DbRecord -> [DbVariable]
+fields :: DbRecord -> [DbRecordField]
 fields = rfields
 
 modulesOf :: DbRecord -> [DbModule]
@@ -239,10 +239,10 @@ data ExprType
     | MatchExpr
     | Case
     | If
-    | Receive
-    | Try
-    | Begin
-      deriving Eq
+    | Receive   
+    | Try          -- ^ try ... end
+    | BlockExpr    -- ^ begin ... end
+      deriving (Show,Eq)
 
 filename :: DbFile -> System.FilePath.FilePath
 filename = System.FilePath.takeFileName . fpath
@@ -375,17 +375,25 @@ person = DR { rname = "p"
             , rreferences = [newrecord]
             }
 
-nameField :: DbVariable
-nameField = DV { vname = "name"
-               , vreferences = [newrecord]
-               , vbindings = []
-               }
+nameField :: DbRecordField
+nameField = DRF { fieldName = "name"
+                , fieldRecord = person
+                , fieldReferences = [newrecord]
+                , fieldType = stringType
+                }
 
-ageField :: DbVariable
-ageField = DV { vname = "age"
-              , vreferences = [newrecord]
-              , vbindings = []
-              }
+stringType :: DbType
+stringType = DT { tname = "string" }
+
+intType :: DbType
+intType = DT { tname = "int" }
+
+ageField :: DbRecordField
+ageField = DRF { fieldName = "age"
+               , fieldRecord = person
+               , fieldReferences = [newrecord]
+               , fieldType = intType
+               }
 
 a :: DbFunction
 a = DF { fname = "a"
@@ -393,6 +401,7 @@ a = DF { fname = "a"
        , fexpressions = [bodya]
        , fexported = True
        , fparameters = [x]
+       , freturns = []
        , fcalls = [b]
        , floc = [1]
        , frecursive = NonRecursive
@@ -413,7 +422,7 @@ bodya = DE { etype = FuncCall
            , ebody = "b(X + 2)."
            , efunction = a
            , evariables = [x]
-           , origin = [bodya]
+           , origin = []
            , reach = []
            , eexpressions = []
            }
@@ -424,6 +433,7 @@ b = DF { fname = "b"
        , fexpressions = [body]
        , fexported = False
        , fparameters = [y]
+       , freturns = []
        , fcalls = []
        , floc = [2]
        , frecursive = NonRecursive
@@ -488,6 +498,7 @@ f = DF { fname = "f"
        , fmodule = m2
        , fexpressions = [nameDef, newrecord]
        , fparameters = [age]
+       , freturns = []
        , fexported = False
        , fcalls = []
        , floc = [2]
@@ -558,6 +569,7 @@ data DbFunction =
        , fmodule :: DbModule
        , fexpressions :: [DbExpression]
        , fparameters :: [DbVariable]
+       , freturns :: [DbType]
        , freferences :: [DbExpression]
        , fdynamicReferences :: [DbExpression]
        , fexported :: Bool
@@ -593,6 +605,13 @@ data DbExpression =
        }
     deriving Eq
 
+data DbFunctionParam =
+    DFP { fpexpr :: DbExpression
+        , fptype :: DbType
+        , fpindex :: Int
+        }
+    deriving (Eq,Show)
+
 instance Show DbExpression where
     show = ebody
 
@@ -605,11 +624,19 @@ data DbVariable =
 
 data DbRecord =
     DR { rname :: Name
-       , rfields :: [DbVariable]
+       , rfields :: [DbRecordField]
        , rmodules :: [DbModule]
        , rreferences :: [DbExpression]
        }
     deriving (Show, Eq)
+
+data DbRecordField =
+    DRF { fieldName :: Name
+        , fieldReferences :: [DbExpression]
+        , fieldRecord :: DbRecord
+        , fieldType :: DbType
+        }
+    deriving (Show,Eq)
 
 data DbSpec =
     DS { sname :: Name
