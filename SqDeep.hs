@@ -133,6 +133,7 @@ evalApp UNull [Seq xs] = Bool $ null xs
 evalApp UElem [a,Seq bs] = Bool $ a `elem` bs
 evalApp UAllIn [a,Seq bs] = Bool $ a `elem` bs
 evalApp UAnyIn [Seq as,Seq bs] = Bool $ as `Sq.any_in` bs
+evalApp UUnion [Seq as,Seq bs] = Seq $ as `union` bs
 evalApp UCalls [Fun f] = Seq . map Fun $ Sq.fcalls f
 evalApp UFunctions [Mod m] = Seq . map Fun $ Sq.functions m
 evalApp UExported [Fun f] = Bool . Sq.fexported $ f

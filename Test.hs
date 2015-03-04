@@ -59,7 +59,7 @@ tests = [ ("{m <- modules, f <- functions m | f}", D.wrap [a,b,f]) -- q1
         -- q25
         , ("{m <- modules, f <- functions m, calls f `any_in` {f | m <- modules, name m == \"m1\", f <- functions m} | f}", D.wrap [a])
         -- q26
-        , ("{m <- modules, name m == \"m1\", f <- (functions m `u` {c | f <- functions m , c <- calls f} | name f}", D.wrap . map fname $ [a,b])
+        , ("{m <- modules, name m == \"m1\", f <- (functions m ∪ {c | f <- functions m , c <- calls f} | name f}", D.wrap . map fname $ [a,b])
         -- q27
         , ("{m1 <- modules, name m1 == \"m1\" , m2 <- modules, name m2 == \"m2\" , f <- (functions m1) ÷ (functions m2)}", D.wrap [a,b,f])
         -- q28

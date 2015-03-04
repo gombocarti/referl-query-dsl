@@ -221,7 +221,7 @@ funtype "type" = Just (UTypeOf, Un tcheck)
     where tcheck t = do typeable t 
                         return (typeOfTypefun t)
 funtype "not" = Just (UNot, Un (\t -> expectThen Bool t Bool))
-funtype "u"   = Just (UUnion, Bin tcheck)
+funtype "∪"   = Just (UUnion, Bin tcheck)
     where tcheck (List a) (List b) = expectThen a b (List a)
           tcheck _  _ = throwError "type error"
 funtype "elem" = Just (UElem, Bin tcheck)
@@ -294,7 +294,7 @@ data Binop
 --- Parsers:
 
 sqDef = L.haskellStyle
-        { T.opStart = oneOf "<=>"
+        { T.opStart = oneOf "<=>∪⊆"
         , T.opLetter = T.opStart sqDef
         }
 
@@ -306,6 +306,7 @@ lexeme     = T.lexeme lexer
 identifier = T.identifier lexer
 symbol     = T.symbol lexer
 reserved   = T.reserved lexer
+reservedOp = T.reservedOp lexer
 braces     = T.braces lexer
 whiteSpace = T.whiteSpace lexer
 stringLiteral = T.stringLiteral lexer
@@ -328,11 +329,12 @@ app = parens app
       <?> "function application"
           where argument = initial <|> var <|> relation <|> app <|> query
 
-initial :: Parser UQuery
-initial = modules <|> atModule <|> atFile <|> atExpression <?> "initial selector"
-
-atModule :: Parser UQuery
-atModule = reserved "atModule" `as` UAtModule
+union :: Parser UQuery
+union = do 
+  as <- try $ query <* reservedOp "∪"                 
+  bs <- query
+  return $ UAppExpr (UFName "∪") [as,bs] -- TODO: UUnion instead of UFName
+  <?> "union"
 
 -- query = { var <- query | query }
 
@@ -343,32 +345,26 @@ bind =  do
   rest <- following
   return (UBind x (UF v rest))
 
-ret :: Parser UQuery
-ret = UReturn <$> (app <|> var <|> query)
-
-vline :: Parser String
-vline = symbol "|"
-
 bindop :: Parser String
 bindop = symbol "<-"
 
 bindable :: Parser UQuery
-bindable = initial <|> app <|> query
+bindable = initial <|> app <|> union <|> query
 
 following :: Parser UQuery
 following = (comma *> (filter <|> bind)) <|> (vline *> ret)
 
-modules :: Parser UQuery
-modules = reserved "modules" `as` UModules
+filter :: Parser UQuery
+filter = do
+  f <- relation <|> app
+  rest <- following
+  return (UBind (UGuard f) (UF "()" rest))
 
-atFile :: Parser UQuery
-atFile = reserved "atFile" `as` UAtFile
+vline :: Parser String
+vline = symbol "|"
 
-atFunction :: Parser UQuery
-atFunction = reserved "atFunction" `as` UAtFunction
-
-atExpression :: Parser UQuery
-atExpression = reserved "atExpression" `as` UAtExpr
+ret :: Parser UQuery
+ret = UReturn <$> (app <|> var <|> query)
 
 relation :: Parser UQuery
 relation = parens relation <|>
@@ -379,12 +375,6 @@ relation = parens relation <|>
               a2 <- relOperand
               return $ rel a2
            <?> "relation"
-
-filter :: Parser UQuery
-filter = do
-  f <- relation <|> app
-  rest <- following
-  return (UBind (UGuard f) (UF "()" rest))
 
 relOperand :: Parser UQuery
 relOperand = app <|> var <|> numLit <|> stringLit
@@ -420,6 +410,24 @@ gte = symbol ">=" `as` Gte
 
 regexp :: Parser Binop
 regexp = symbol "=~" `as` Regexp
+
+initial :: Parser UQuery
+initial = modules <|> atModule <|> atFile <|> atExpression <?> "initial selector"
+
+atModule :: Parser UQuery
+atModule = reserved "atModule" `as` UAtModule
+
+modules :: Parser UQuery
+modules = reserved "modules" `as` UModules
+
+atFile :: Parser UQuery
+atFile = reserved "atFile" `as` UAtFile
+
+atFunction :: Parser UQuery
+atFunction = reserved "atFunction" `as` UAtFunction
+
+atExpression :: Parser UQuery
+atExpression = reserved "atExpression" `as` UAtExpr
          
 as :: Parser a -> b -> Parser b
 as p x = do { _ <- p; return x }
