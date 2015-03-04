@@ -70,7 +70,7 @@ data UFun
     | UNot       -- ^ Prelude.not
     | UElem      -- ^ Prelude.elem 
     | UUnion     -- ^ Data.List.union
-    | UAllIn
+    | USubset
     | UAnyIn
     | UFName String -- ^ Function identified by its name.
     | UExported
@@ -227,7 +227,7 @@ funtype "∪"   = Just (UUnion, Bin tcheck)
 funtype "elem" = Just (UElem, Bin tcheck)
     where tcheck a (List x) = expectThen a x Bool
           tcheck _ _        = throwError "type error"
-funtype "all_in" = Just (UAllIn, Bin tcheck)
+funtype "⊆" = Just (USubset, Bin tcheck)
     where tcheck a@(List _) b@(List _) = expectThen a b Bool; 
           tcheck _ _                   = throwError "type error"
 funtype "any_in" = Just (UAnyIn, Bin tcheck)
@@ -315,7 +315,7 @@ decimal    = T.decimal lexer
 parens     = T.parens lexer
 
 query :: Parser UQuery
-query = whiteSpace *> braces bind
+query = whiteSpace *> braces bind <?> "query"
 
 var :: Parser UQuery
 var = UVarExpr <$> identifier <?> "variable"
@@ -329,12 +329,17 @@ app = parens app
       <?> "function application"
           where argument = initial <|> var <|> relation <|> app <|> query
 
+infixSetOp :: String -> Parser UQuery
+infixSetOp op = do
+  as <- try $ (query <|> app) <* reservedOp op
+  bs <- query <|> app
+  return $ UAppExpr (UFName op) [as,bs]
+
 union :: Parser UQuery
-union = do 
-  as <- try $ query <* reservedOp "∪"                 
-  bs <- query
-  return $ UAppExpr (UFName "∪") [as,bs] -- TODO: UUnion instead of UFName
-  <?> "union"
+union = infixSetOp "∪" <?> "union"
+
+subset :: Parser UQuery
+subset = infixSetOp "⊆" <?> "subset of"
 
 -- query = { var <- query | query }
 
@@ -356,7 +361,7 @@ following = (comma *> (filter <|> bind)) <|> (vline *> ret)
 
 filter :: Parser UQuery
 filter = do
-  f <- relation <|> app
+  f <- relation <|> subset <|> app
   rest <- following
   return (UBind (UGuard f) (UF "()" rest))
 

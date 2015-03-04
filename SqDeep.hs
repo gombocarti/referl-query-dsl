@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverlappingInstances #-}
 module SqDeep where
 
-import Parser (Id, check, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..), query)
+import Parser (Id, check, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..), query, runchk)
 import Text.Parsec (parse, ParseError)
 import qualified Sq
 import Control.Monad.Error (throwError)
@@ -94,7 +94,7 @@ eval (UBind m (UF x body)) env = Seq . foldr step [] $ xs
       xs = [eval body ((x,a):env) | a <- as]
       step (Seq xs) acc = xs ++ acc
 eval (UVarExpr v) env = readVar v env
-eval (UAppExpr f args) env = evalApp f (map (flip eval []) args)
+eval (UAppExpr f args) env = evalApp f (map (flip eval env) args)
 eval UModules _env = Seq . map Mod $ Sq.modules
 eval UFiles _env = Seq . map File $ Sq.files
 eval UAtFunction _env = Fun Sq.atFunction
@@ -109,10 +109,6 @@ eval (URelation rel p1 p2) env = Bool $ evalRel p1' rel p2'
           p2' = eval p2 env
 eval (UGuard pred) env = if p then Seq [Unit] else Seq []
     where Bool p = eval pred env
-eval (UUnionExpr q1 q2) env = Seq $ union v1 v2
-    where
-      Seq v1 = eval q1 env
-      Seq v2 = eval q2 env
 
 evalRel :: Value -> Binop -> Value -> Bool
 evalRel a Eq  b = a == b
@@ -131,7 +127,7 @@ evalApp UArity [Fun f] = Int . Sq.arity $ f
 evalApp UNot [Bool pred] = Bool $ not pred
 evalApp UNull [Seq xs] = Bool $ null xs
 evalApp UElem [a,Seq bs] = Bool $ a `elem` bs
-evalApp UAllIn [a,Seq bs] = Bool $ a `elem` bs
+evalApp USubset [Seq as,Seq bs] = Bool $ as `Sq.all_in` bs
 evalApp UAnyIn [Seq as,Seq bs] = Bool $ as `Sq.any_in` bs
 evalApp UUnion [Seq as,Seq bs] = Seq $ as `union` bs
 evalApp UCalls [Fun f] = Seq . map Fun $ Sq.fcalls f
