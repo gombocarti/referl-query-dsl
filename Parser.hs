@@ -39,7 +39,6 @@ data UQuery
     = UAppExpr UFun [UQuery]
     | UBind UQuery UF
     | UReturn UQuery
-    | UUnionExpr UQuery UQuery
     | UVarExpr Id
     | UGuard UQuery
     | URelation Binop UQuery UQuery
@@ -177,12 +176,6 @@ check (UGuard p) env = do
   return $ UGuard p' ::: List Unit
 check q@(UNumLit _) _env = return $ q ::: Int
 check q@(UStringLit _) _env = return $ q ::: String
-check (UUnionExpr q1 q2) env = do
-  q1' ::: t1 <- check q1 env
-  q2' ::: t2 <- check q2 env
-  expect t1 t2
-  return $ (UUnionExpr q1' q2') ::: t1
-
 
 -- |Maps function name to tree node, and checks the argument types.
 checkFun :: Id -> [Typ] -> Either String (UFun, Typ)
@@ -283,11 +276,6 @@ typeable :: Typ -> Either String ()
 typeable t | t `elem` [FunParam, RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
 
--- | Decides whether actual argument type equals to expected type. If it does, returns the third argument.
-expectThen :: Typ -> Typ -> Typ -> Either String Typ
-expectThen expected actual returnType = do {expect expected actual; return returnType}
-
--- | Decides whether actual argument type equals to expected type. If it does not, throws type error.
 expect :: Typ -> Typ -> Either String ()
 expect expected actual 
     | actual == expected = return ()
