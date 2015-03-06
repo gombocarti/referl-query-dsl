@@ -8,6 +8,7 @@ import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
 import qualified Sq (DbModule, DbFunction, Named, FileType)
 import Control.Monad.Error (throwError)
+import Control.Monad (void)
 import Control.Applicative ((<$>))
 import Prelude hiding (filter)
 import Data.Maybe (fromJust)
@@ -81,14 +82,9 @@ data UFun
     | UOrigin
     | UReach
     | UTypeOf
+    | UExprType
     | UExpressions
       deriving (Show, Eq)
-
-data UFunTyp 
-    = Un (Typ -> Either String Typ)
-    | Bin (Typ -> Typ -> Either String Typ)
-
--- data UFunArity = Un | Bin deriving Show
 
 data TErr = TErr Typ Typ
 
@@ -117,6 +113,19 @@ data Typ
     | Unit
     | FunRecursivity
     | FilePath
+    | A     -- ^ Type variable.
+    | B     -- ^ Type variable.
+    | Typ :->: Typ  -- ^ Function type.
+    | TypConstraint :=>: Typ
+      deriving (Show,Eq)
+
+infixr 4 :->:
+infixr 3 :=>:
+
+data TypConstraint 
+    = Named Typ
+    | Referencable Typ
+    | Typeable Typ
       deriving (Show,Eq)
 
 runchk :: String -> Parser UQuery -> TEnv ->  Either String TUQuery
@@ -173,69 +182,87 @@ check (UUnionExpr q1 q2) env = do
   expect t1 t2
   return $ (UUnionExpr q1' q2') ::: t1
 
+
 -- |Maps function name to tree node, and checks the argument types.
 checkFun :: Id -> [Typ] -> Either String (UFun, Typ)
 checkFun f xs = case funtype f of
-                  Just (f', Un chk) -> case xs of
-                                         [] -> tooFewParams f 1
-                                         [p] -> do {t <- chk p; return (f', t)}
-                                         _ ->  tooManyParams f 1
-                  Just (f', Bin chk) -> case xs of
-                                          [a, b]  -> do {t <- chk a b; return (f', t)}
-                                          _:_:_:_ -> tooManyParams f 2
-                                          _ -> tooFewParams f 1
+                  Just (f', fType) -> do resType <- typeCheck f fType xs 
+                                         return (f', resType)
                   Nothing -> throwError $ "unknown function: " ++ f
 
-tooManyParams :: Id -> Int -> Either String (UFun, Typ)
-tooManyParams f expected = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show expected ++ ")"
+typeCheck :: Id -> Typ -> [Typ] -> Either String Typ
+typeCheck f t args = fst <$> tcheck t args []
+    where 
+      tcheck (_ :->: _) [] _env = tooFewParams f (countArgs t) (length args)
+      tcheck (a :->: b) (x:xs) env = do env' <- unify a x env
+                                        tcheck b xs env'
+      tcheck (const :=>: a) args env = do res@(_,env') <- tcheck a args env
+                                          checkConst const env'
+                                          return res
+      tcheck _ (_:_) env = tooManyParams f (countArgs t) (length args)
+      tcheck (List a) [] env = do (resT, _) <- tcheck a [] env
+                                  return (List resT, env)
+      tcheck a [] env = case lookup a env of
+                          Just b -> return (b,env)
+                          Nothing -> return (a,env)
 
-tooFewParams :: Id -> Int -> Either String (UFun, Typ)
-tooFewParams f expected = throwError $ "too few parameters: " ++ f ++ "(expected " ++ show expected ++ ")"
+      unify (List a) (List b) env = unify a b env
+      unify a b  env | typeVar a  = case lookup a env of 
+                                      Just t -> unify t b env
+                                      Nothing ->  return $ (a,b):env
+                     | a == b     = return env
+                     | otherwise  = throwError "type error"
+
+      typeVar v = v == A || v == B
+
+      checkConst (Named a)        env = case lookup a env of
+                                          Just t -> named t >> return env
+                                          Nothing -> throwError "constraint error"
+      checkConst (Referencable a) env = case lookup a env of
+                                          Just t -> referencable t >> return env
+                                          Nothing -> throwError "constraint error"
+      checkConst (Typeable a) env     = case lookup a env of
+                                          Just t -> typeable t >> return env
+                                          Nothing -> throwError "constraint error"
+
+      countArgs t = tArgs t 0
+
+      tArgs (_ :=>: b) n = tArgs b n
+      tArgs (_ :->: b) n = tArgs b (n + 1)
+      tArgs _          n = n
+
+tooManyParams :: Id -> Int -> Int -> Either String a
+tooManyParams f expected actual = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")" 
+
+tooFewParams :: Id -> Int -> Int -> Either String a
+tooFewParams f expected actual = throwError $ "too few parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")"
 
 -- |Associates function name with ast node and function which checks argument types.
-funtype :: Id -> Maybe (UFun, UFunTyp)
-funtype "functions" = Just (UFunctions, Un tcheck)
-    where tcheck t = expectThen Mod t (List Fun)
-funtype "name" = Just (UName, Un tcheck)
-    where tcheck t = do named t
-                        return String
-funtype "arity" = Just (UArity, Un tcheck)
-    where tcheck t = expectThen Fun t Int
-funtype "null" = Just (UNull, Un tcheck)
-    where tcheck t = case t of
-                       List _ -> return Bool
-                       _ -> throwError "type error"
-funtype "calls" = Just (UCalls, Un (\t -> expectThen Fun t (List Fun)))
-funtype "path" = Just (UPath, Un (\t -> expectThen File t FilePath))
-funtype "directory" = Just (UDir, Un (\t -> expectThen File t FilePath))
-funtype "filename" = Just (UFileName, Un (\t -> expectThen File t FilePath))
-funtype "file" = Just (UFile, Un (\t -> expectThen Mod t (List File)))
-funtype "exported" = Just (UExported, Un (\t -> expectThen Fun t Bool))
-funtype "recursivity" = Just (URecursivity, Un (\t -> expectThen Fun t FunRecursivity))
-funtype "references" = Just (UReferences, Un tcheck)
-    where tcheck t = do referencable t 
-                        return (List Expr)
-funtype "returns" = Just (UReturns, Un (\t -> expectThen Fun t Type))
-funtype "parameters" = Just (UParameters, Un (\t -> expectThen Fun t (List Expr)))
-funtype "type" = Just (UTypeOf, Un tcheck)
-    where tcheck t = do typeable t 
-                        return (typeOfTypefun t)
-funtype "not" = Just (UNot, Un (\t -> expectThen Bool t Bool))
-funtype "∪"   = Just (UUnion, Bin tcheck)
-    where tcheck (List a) (List b) = expectThen a b (List a)
-          tcheck _  _ = throwError "type error"
-funtype "elem" = Just (UElem, Bin tcheck)
-    where tcheck a (List x) = expectThen a x Bool
-          tcheck _ _        = throwError "type error"
-funtype "⊆" = Just (USubset, Bin tcheck)
-    where tcheck a@(List _) b@(List _) = expectThen a b Bool; 
-          tcheck _ _                   = throwError "type error"
-funtype "any_in" = Just (UAnyIn, Bin tcheck)
-    where tcheck a@(List _) b@(List _) = expectThen a b Bool; 
-          tcheck _ _                   = throwError "type error"
-funtype "origin" = Just (UOrigin, Un (\t -> expectThen Expr t (List Expr)))
-funtype "reach" = Just (UReach, Un (\t -> expectThen Expr t (List Expr)))
-funtype _  = Nothing
+funtype :: Id -> Maybe (UFun, Typ)
+funtype "functions"   = Just (UFunctions, Mod :->: List Fun)
+funtype "name"        = Just (UName, Named A :=>: A :->: String)
+funtype "arity"       = Just (UArity, Fun :->: Int)
+funtype "null"        = Just (UNull, List A :->: Bool)
+funtype "calls"       = Just (UCalls, Fun :->: List Fun)
+funtype "path"        = Just (UPath, File :->: FilePath)
+funtype "directory"   = Just (UDir, File :->: FilePath)
+funtype "filename"    = Just (UFileName, File :->: FilePath)
+funtype "file"        = Just (UFile, Mod :->: List File)
+funtype "exported"    = Just (UExported, Fun :->: Bool)
+funtype "recursivity" = Just (URecursivity, Fun :->: FunRecursivity)
+funtype "references"  = Just (UReferences, Referencable A :=>: A :->: List Expr)
+funtype "returns"     = Just (UReturns, Fun :->: List Type)
+funtype "parameters"  = Just (UParameters, Fun :->: List FunParam)
+funtype "type"        = Just (UTypeOf, Typeable A :=>: A :->: Type)
+funtype "exprType"    = Just (UExprType, Expr :->: ExprType)
+funtype "not"         = Just (UNot, Bool :->: Bool)
+funtype "∪"           = Just (UUnion, List A :->: List A :->: List A)
+funtype "elem"        = Just (UElem, A :->: List A :->: Bool)
+funtype "⊆"           = Just (USubset, List A :->: List A :->: Bool)
+funtype "any_in"      = Just (UAnyIn, List A :->: List A :->: Bool)
+funtype "origin"      = Just (UOrigin, Expr :->: List Expr)
+funtype "reach"       = Just (UReach, Expr :->: List Expr)
+funtype _             = Nothing
 
 checkRel :: Binop -> Typ -> Typ -> Either String ()
 checkRel op a b = do
