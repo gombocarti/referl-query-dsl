@@ -30,6 +30,10 @@ instance Wrap Sq.DbType where
     wrap            = Type
     unwrap (Type t) = t
 
+instance Wrap Sq.ExprType where
+    wrap            = ExprType
+    unwrap (ExprType t) = t
+
 instance Wrap Int where
     wrap           = Int
     unwrap (Int n) = n
@@ -137,11 +141,14 @@ evalApp UPath [File f] = Path . Sq.fpath $ f
 evalApp UDir [File f] = Path . Sq.dir $ f
 evalApp UFileName [File f] = Path . Sq.filename $ f
 evalApp UTypeOf [arg] = case arg of 
-                          FunParam p -> Type . Sq.fptype $ p
-                          RecField f -> Type . Sq.fieldType $ f
-                          Expr e -> ExprType . Sq.etype $ e
-evalApp UReturns [Fun f] = Seq . map Type . Sq.returns $ f
-evalApp UOrigin [Expr expr] = Seq . map Expr . Sq.origin $ expr
+                          FunParam p -> wrap . Sq.fptype $ p
+                          RecField f -> wrap . Sq.fieldType $ f
+                          Expr e -> wrap . Sq.etype $ e
+evalApp UReturns [Fun f] = wrap . Sq.returns $ f
+evalApp UOrigin [Expr expr] = wrap . Sq.origin $ expr
+evalApp UReferences [arg] = case arg of
+                              Fun f -> wrap . Sq.freferences $ f
+                              Rec r -> wrap . Sq.rreferences $ r
 
 readVar :: Id -> Env -> Value
 readVar v env = case lookup v env of
