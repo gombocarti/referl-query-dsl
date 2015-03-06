@@ -14,6 +14,10 @@ class Wrap a where
     wrap   :: a -> Value
     unwrap :: Value -> a
 
+instance Wrap Sq.DbFile where
+    wrap            = File
+    unwrap (File f) = f
+
 instance Wrap Sq.DbModule where
     wrap           = Mod
     unwrap (Mod m) = m
@@ -37,6 +41,10 @@ instance Wrap Sq.ExprType where
 instance Wrap Int where
     wrap           = Int
     unwrap (Int n) = n
+
+instance Wrap Bool where
+    wrap           = Bool
+    unwrap (Bool n) = n
 
 instance Wrap String where
     wrap              = String
@@ -99,16 +107,16 @@ eval (UBind m (UF x body)) env = Seq . foldr step [] $ xs
       step (Seq xs) acc = xs ++ acc
 eval (UVarExpr v) env = readVar v env
 eval (UAppExpr f args) env = evalApp f (map (flip eval env) args)
-eval UModules _env = Seq . map Mod $ Sq.modules
-eval UFiles _env = Seq . map File $ Sq.files
-eval UAtFunction _env = Fun Sq.atFunction
-eval UAtFile _env = File Sq.atFile
-eval UAtModule _env = Mod Sq.atModule
-eval UAtExpr _env = Expr Sq.atExpression
-eval (UReturn e) env = Seq $ [eval e env]
-eval (UStringLit s) _env = String s
-eval (UNumLit i) _env = Int i
-eval (URelation rel p1 p2) env = Bool $ evalRel p1' rel p2'
+eval UModules _env = wrap Sq.modules
+eval UFiles _env = wrap Sq.files
+eval UAtFunction _env = wrap Sq.atFunction
+eval UAtFile _env = wrap Sq.atFile
+eval UAtModule _env = wrap Sq.atModule
+eval UAtExpr _env = wrap Sq.atExpression
+eval (UReturn e) env = Seq [eval e env]
+eval (UStringLit s) _env = wrap s
+eval (UNumLit i) _env = wrap i
+eval (URelation rel p1 p2) env = wrap $ evalRel p1' rel p2'
     where p1' = eval p1 env
           p2' = eval p2 env
 eval (UGuard pred) env = if p then Seq [Unit] else Seq []
@@ -126,20 +134,20 @@ evalRel a Regexp b = s =~ regex
           String regex = b
 
 evalApp :: UFun -> [Value] -> Value
-evalApp UName [arg] = String . Sq.name $ arg
-evalApp UArity [Fun f] = Int . Sq.arity $ f
-evalApp UNot [Bool pred] = Bool $ not pred
-evalApp UNull [Seq xs] = Bool $ null xs
-evalApp UElem [a,Seq bs] = Bool $ a `elem` bs
-evalApp USubset [Seq as,Seq bs] = Bool $ as `Sq.all_in` bs
-evalApp UAnyIn [Seq as,Seq bs] = Bool $ as `Sq.any_in` bs
+evalApp UName [arg] = wrap . Sq.name $ arg
+evalApp UArity [Fun f] = wrap . Sq.arity $ f
+evalApp UNot [Bool pred] = wrap $ not pred
+evalApp UNull [Seq xs] = wrap $ null xs
+evalApp UElem [a,Seq bs] = wrap $ a `elem` bs
+evalApp USubset [Seq as,Seq bs] = wrap $ as `Sq.all_in` bs
+evalApp UAnyIn [Seq as,Seq bs] = wrap $ as `Sq.any_in` bs
 evalApp UUnion [Seq as,Seq bs] = Seq $ as `union` bs
-evalApp UCalls [Fun f] = Seq . map Fun $ Sq.fcalls f
-evalApp UFunctions [Mod m] = Seq . map Fun $ Sq.functions m
-evalApp UExported [Fun f] = Bool . Sq.fexported $ f
-evalApp UPath [File f] = Path . Sq.fpath $ f
-evalApp UDir [File f] = Path . Sq.dir $ f
-evalApp UFileName [File f] = Path . Sq.filename $ f
+evalApp UCalls [Fun f] = wrap $  Sq.fcalls f
+evalApp UFunctions [Mod m] = wrap $ Sq.functions m
+evalApp UExported [Fun f] = wrap . Sq.fexported $ f
+evalApp UPath [File f] = wrap . Sq.fpath $ f
+evalApp UDir [File f] = wrap . Sq.dir $ f
+evalApp UFileName [File f] = wrap . Sq.filename $ f
 evalApp UTypeOf [arg] = case arg of 
                           FunParam p -> wrap . Sq.fptype $ p
                           RecField f -> wrap . Sq.fieldType $ f
