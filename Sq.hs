@@ -437,7 +437,7 @@ b = DF { fname = "b"
        , fcalls = []
        , floc = [2]
        , frecursive = NonRecursive
-       , freferences = []
+       , freferences = [bodya]
        , fdynamicReferences = []
        , fbif = False
        , fpure = True
