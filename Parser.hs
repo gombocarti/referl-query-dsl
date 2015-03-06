@@ -168,7 +168,8 @@ check (UAppExpr (UFName f) args) env = do
 check (URelation op q1 q2) env = do
   q1' ::: t1 <- check q1 env
   q2' ::: t2 <- check q2 env
-  checkRel op t1 t2
+  let relType = relationType op
+  typeCheck (show op) relType [t1,t2]
   return $ (URelation op q1' q2') ::: Bool
 check (UGuard p) env = do
   p' ::: t <- check p env
@@ -211,7 +212,7 @@ typeCheck f t args = fst <$> tcheck t args []
                                       Just t -> unify t b env
                                       Nothing ->  return $ (a,b):env
                      | a == b     = return env
-                     | otherwise  = throwError "type error"
+                     | otherwise  = throwError $ "type error: expected: " ++ show a ++ " actual: " ++ show b
 
       typeVar v = v == A || v == B
 
@@ -264,20 +265,9 @@ funtype "origin"      = Just (UOrigin, Expr :->: List Expr)
 funtype "reach"       = Just (UReach, Expr :->: List Expr)
 funtype _             = Nothing
 
-checkRel :: Binop -> Typ -> Typ -> Either String ()
-checkRel op a b = do
-  let typeCheck = fromJust . lookup op $ relations
-  typeCheck a b
-
-relations :: [(Binop, Typ -> Typ -> Either String ())]
-relations = [ (Eq, expect) 
-            , (NEq, expect)
-            , (Lt, expect)
-            , (Lte, expect)
-            , (Gt, expect)
-            , (Gte, expect)
-            , (Regexp, \a b -> do {expect String a; expect String b})
-            ]
+relationType :: Binop -> Typ
+relationType Regexp = String :->: String :->: Bool
+relationType _      = A :->: A :->: Bool
 
 -- |Decides whether the particular type have name function.
 named :: Typ -> Either String ()
@@ -288,15 +278,10 @@ named t | t `elem` [File,Mod,Fun,Record] = return ()
 referencable :: Typ -> Either String ()
 referencable t | t `elem` [Fun,Record] = return ()
                | otherwise = throwError $ "not referencable: " ++ show t
-
+                             
 typeable :: Typ -> Either String ()
-typeable t | t `elem` [FunParam, Expr,RecordField] = return ()
+typeable t | t `elem` [FunParam, RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
-
-typeOfTypefun :: Typ -> Typ
-typeOfTypefun RecordField = Type
-typeOfTypefun Expr        = ExprType
-typeOfTypefun FunParam    = Type
 
 -- | Decides whether actual argument type equals to expected type. If it does, returns the third argument.
 expectThen :: Typ -> Typ -> Typ -> Either String Typ
