@@ -100,11 +100,10 @@ run s = either (throwError . show)
         (parse query "" s)
 
 eval :: UQuery -> Env -> Value
-eval (UBind m (UF x body)) env = Seq . foldr step [] $ xs
+eval (UBind m (UF x body)) env = concatValue xs
     where
       Seq as = eval m env
       xs = [eval body ((x,a):env) | a <- as]
-      step (Seq xs) acc = xs ++ acc
 eval (UVarExpr v) env = readVar v env
 eval (UAppExpr f args) env = evalApp f (map (flip eval env) args)
 eval UModules _env = wrap Sq.modules
@@ -121,6 +120,14 @@ eval (URelation rel p1 p2) env = wrap $ evalRel p1' rel p2'
           p2' = eval p2 env
 eval (UGuard pred) env = if p then Seq [Unit] else Seq []
     where Bool p = eval pred env
+-- works if all function returns [a] for some a:
+eval (UFunComp args v) env = foldr step (Seq [eval v env]) args
+    where
+      step f (Seq val) = concatValue $ map (\arg -> evalApp f [arg]) val
+
+concatValue :: [Value] -> Value
+concatValue vals = Seq $ foldr step [] vals
+    where step (Seq xs) acc = xs ++ acc
 
 evalRel :: Value -> Binop -> Value -> Bool
 evalRel a Eq  b = a == b

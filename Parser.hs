@@ -8,7 +8,7 @@ import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
 import qualified Sq (DbModule, DbFunction, Named, FileType)
 import Control.Monad.Error (throwError)
-import Control.Monad (void)
+import Control.Monad (void,foldM)
 import Control.Applicative ((<$>))
 import Prelude hiding (filter)
 import Data.Maybe (fromJust)
@@ -37,6 +37,8 @@ data TF a where
 -- |Untyped syntax tree type for queries.
 data UQuery
     = UAppExpr UFun [UQuery]
+    | UFunExpr UFun
+    | UFunComp [UFun] UQuery
     | UBind UQuery UF
     | UReturn UQuery
     | UVarExpr Id
@@ -164,6 +166,20 @@ check (UAppExpr (UFName f) args) env = do
   let (args', argtypes') = unzip [(arg, argt) | arg ::: argt <- targs']
   (f', ft) <- checkFun f argtypes'
   return $ (UAppExpr f' args') ::: ft
+check (UFunComp arg v) env = do (fs', t) <- foldM step first fs
+                                return $ UFunComp fs' v ::: t
+    where
+      f:fs = reverse arg
+      step :: ([UFun],Typ) -> UFun -> Either String ([UFun],Typ)
+      step (xs,compType) (UFName x) = case funtype x of
+                                            Just (x',t) -> do match (resultType compType) (argType t)
+                                                              return $ ((x':xs),(argType compType :->: resultType t))
+                                            Nothing -> throwError $ "unknown function: " ++ x
+      first = case funtype fname of
+                Just (f',ft) -> ([f'],ft)
+                Nothing -> ([], A)
+      UFName fname = f
+
 check (URelation op q1 q2) env = do
   q1' ::: t1 <- check q1 env
   q2' ::: t2 <- check q2 env
@@ -276,6 +292,22 @@ typeable :: Typ -> Either String ()
 typeable t | t `elem` [FunParam, RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
 
+match a b = expect a (List b)
+              
+resultType (_ :=>: b) = resultType b
+resultType (_ :->: b) = resultType b
+resultType b = b
+
+argType (c :=>: b) = c :=>: argType b
+argType (a :->: b) | funType b = a :->: argType b
+                   | otherwise = a
+
+funType (_ :=>: b) = funType b
+funType (_ :->: _) = True
+funType _ = False
+          
+
+
 expect :: Typ -> Typ -> Either String ()
 expect expected actual 
     | actual == expected = return ()
@@ -343,6 +375,26 @@ subset = infixSetOp "⊆" <?> "subset of"
 
 element :: Parser UQuery
 element = infixSetOp "∈" <?> "element of"
+
+funref :: Parser UFun
+funref = UFName <$> identifier <?> "function reference"
+
+ring :: Parser String
+ring = lexeme $ string "∘"
+
+{-
+composition :: Parser UQuery
+composition = do
+  f <- try $ funref <* ring
+  rest <- composition <|> (UFunExpr <$> funref)
+  return $ UFunComp f rest
+-}
+
+composition :: Parser UQuery
+composition = do
+  fs <- funref `sepBy1` ring 
+  v <- var
+  return $ UFunComp fs v
 
 -- query = { var <- query | query }
 
