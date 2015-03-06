@@ -116,7 +116,7 @@ data Typ
     | A     -- ^ Type variable.
     | B     -- ^ Type variable.
     | Typ :->: Typ  -- ^ Function type.
-    | TypConstraint :=>: Typ
+    | TypConstraint :=>: Typ -- ^ Type constraint.
       deriving (Show,Eq)
 
 infixr 4 :->:
@@ -257,7 +257,7 @@ funtype "type"        = Just (UTypeOf, Typeable A :=>: A :->: Type)
 funtype "exprType"    = Just (UExprType, Expr :->: ExprType)
 funtype "not"         = Just (UNot, Bool :->: Bool)
 funtype "∪"           = Just (UUnion, List A :->: List A :->: List A)
-funtype "elem"        = Just (UElem, A :->: List A :->: Bool)
+funtype "∈"           = Just (UElem, A :->: List A :->: Bool)
 funtype "⊆"           = Just (USubset, List A :->: List A :->: Bool)
 funtype "any_in"      = Just (UAnyIn, List A :->: List A :->: Bool)
 funtype "origin"      = Just (UOrigin, Expr :->: List Expr)
@@ -321,7 +321,7 @@ data Binop
 --- Parsers:
 
 sqDef = L.haskellStyle
-        { T.opStart = oneOf "<=>∪⊆"
+        { T.opStart = oneOf "<=>∪⊆∈"
         , T.opLetter = T.opStart sqDef
         }
 
@@ -358,8 +358,8 @@ app = parens app
 
 infixSetOp :: String -> Parser UQuery
 infixSetOp op = do
-  as <- try $ (query <|> app) <* reservedOp op
-  bs <- query <|> app
+  as <- try $ (query <|> initial <|> var <|> app) <* reservedOp op
+  bs <- query <|> initial <|> app
   return $ UAppExpr (UFName op) [as,bs]
 
 union :: Parser UQuery
@@ -367,6 +367,9 @@ union = infixSetOp "∪" <?> "union"
 
 subset :: Parser UQuery
 subset = infixSetOp "⊆" <?> "subset of"
+
+element :: Parser UQuery
+element = infixSetOp "∈" <?> "element of"
 
 -- query = { var <- query | query }
 
