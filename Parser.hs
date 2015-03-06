@@ -447,7 +447,7 @@ regexp :: Parser Binop
 regexp = symbol "=~" `as` Regexp
 
 initial :: Parser UQuery
-initial = modules <|> atModule <|> atFile <|> atExpression <?> "initial selector"
+initial = modules <|> atModule <|> atFile <|> atFunction <|> atExpression <?> "initial selector"
 
 atModule :: Parser UQuery
 atModule = reserved "atModule" `as` UAtModule
