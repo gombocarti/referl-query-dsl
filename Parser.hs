@@ -222,9 +222,6 @@ typeCheck f t args = fst <$> tcheck t args []
                      | a == b     = return env
                      | otherwise  = throwError $ "type error: expected: " ++ show a ++ " actual: " ++ show b
 
-
-      
-
       countArgs t = tArgs t 0
 
       tArgs (_ :=>: b) n = tArgs b n
@@ -284,35 +281,36 @@ typeable :: Typ -> Either String ()
 typeable t | t `elem` [FunParam, RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
 
-checkConst (Named a)        env = case lookup a env of
-                                    Just t -> named t >> return env
-                                    Nothing -> throwError "constraint error"
-checkConst (Referencable a) env = case lookup a env of
-                                    Just t -> referencable t >> return env
-                                    Nothing -> throwError "constraint error"
-checkConst (Typeable a) env     = case lookup a env of
-                                    Just t -> typeable t >> return env
-                                    Nothing -> throwError "constraint error"
+type TypEnv = [(Typ,Typ)]
 
-compose :: Typ -> Typ -> [(Typ,Typ)] ->  Either ErrMsg (Typ,[(Typ,Typ)])
+checkConst :: TypConstraint -> TypEnv -> Either ErrMsg ()
+checkConst const env = case const of
+                         Named a        -> getTyp a >>= named
+                         Referencable a -> getTyp a >>= referencable
+                         Typeable a     -> getTyp a >>= typeable
+    where getTyp a = case lookup a env of
+                       Just t  -> return t
+                       Nothing -> throwError "constraint error"
+
+compose :: Typ -> Typ -> TypEnv ->  Either ErrMsg (Typ,[(Typ,Typ)])
 compose (const :=>: f) g@(a :->: b) env = do
   (t, env') <- compose f g env
   checkConst const env'
   return (t, env')
 compose (c :->: d) (a :->: b) env 
-    | typeVar c = do
-  expect (List c) b
-  let (List t) = b
-  return $ (a :->: List d, (c,t):env)
-    | otherwise = do
-  expect (List c) b
-  return $ (a :->: List d, env)
+    | typeVar c = do  expect (List c) b
+                      let (List t) = b
+                      return $ (a :->: d, (c,t):env)
+                             
+    | otherwise = do  expect (List c) b
+                      return $ (a :->: d, env)
               
+{-
 resultType :: Typ -> Typ
 resultType (_ :=>: b) = resultType b
 resultType (_ :->: b) = resultType b
 resultType b = b
-
+-}
 argType :: Typ -> Typ
 argType (c :=>: b) = c :=>: argType b
 argType (a :->: b) | funType b = a :->: argType b
