@@ -175,8 +175,7 @@ check (UFunComp args v) env = do
   return $ UFunComp args' v' ::: compType
     where
       step :: Typ -> Typ -> Either ErrMsg Typ
-      step compType atype = do match (resultType compType) (argType atype)
-                               return $ argType compType :->: resultType atype
+      step compType atype = fst <$> compose atype compType []
 
       fname (UFName f) = f
 
@@ -223,17 +222,8 @@ typeCheck f t args = fst <$> tcheck t args []
                      | a == b     = return env
                      | otherwise  = throwError $ "type error: expected: " ++ show a ++ " actual: " ++ show b
 
-      typeVar v = v == A || v == B
 
-      checkConst (Named a)        env = case lookup a env of
-                                          Just t -> named t >> return env
-                                          Nothing -> throwError "constraint error"
-      checkConst (Referencable a) env = case lookup a env of
-                                          Just t -> referencable t >> return env
-                                          Nothing -> throwError "constraint error"
-      checkConst (Typeable a) env     = case lookup a env of
-                                          Just t -> typeable t >> return env
-                                          Nothing -> throwError "constraint error"
+      
 
       countArgs t = tArgs t 0
 
@@ -294,24 +284,52 @@ typeable :: Typ -> Either String ()
 typeable t | t `elem` [FunParam, RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
 
-match a b = expect a (List b)
+checkConst (Named a)        env = case lookup a env of
+                                    Just t -> named t >> return env
+                                    Nothing -> throwError "constraint error"
+checkConst (Referencable a) env = case lookup a env of
+                                    Just t -> referencable t >> return env
+                                    Nothing -> throwError "constraint error"
+checkConst (Typeable a) env     = case lookup a env of
+                                    Just t -> typeable t >> return env
+                                    Nothing -> throwError "constraint error"
+
+compose :: Typ -> Typ -> [(Typ,Typ)] ->  Either ErrMsg (Typ,[(Typ,Typ)])
+compose (const :=>: f) g@(a :->: b) env = do
+  (t, env') <- compose f g env
+  checkConst const env'
+  return (t, env')
+compose (c :->: d) (a :->: b) env 
+    | typeVar c = do
+  expect (List c) b
+  let (List t) = b
+  return $ (a :->: List d, (c,t):env)
+    | otherwise = do
+  expect (List c) b
+  return $ (a :->: List d, env)
               
+resultType :: Typ -> Typ
 resultType (_ :=>: b) = resultType b
 resultType (_ :->: b) = resultType b
 resultType b = b
 
+argType :: Typ -> Typ
 argType (c :=>: b) = c :=>: argType b
 argType (a :->: b) | funType b = a :->: argType b
                    | otherwise = a
 
+funType :: Typ -> Bool
 funType (_ :=>: b) = funType b
 funType (_ :->: _) = True
 funType _ = False
-          
 
+typeVar :: Typ -> Bool
+typeVar v = v == A || v == B
 
 expect :: Typ -> Typ -> Either String ()
+expect (List a) (List b) = expect a b
 expect expected actual 
+    | typeVar expected = return ()
     | actual == expected = return ()
     | otherwise = throwError $ "type error: expected: " ++ show expected ++ ", actual: " ++ show actual
 
