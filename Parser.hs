@@ -166,25 +166,25 @@ check (UAppExpr (UFName f) args) env = do
   let (args', argtypes') = unzip [(arg, argt) | arg ::: argt <- targs']
   (f', ft) <- checkFun f argtypes'
   return $ (UAppExpr f' args') ::: ft
-check (UFunComp arg v) env = do (fs', t) <- foldM step first fs
-                                return $ UFunComp fs' v ::: t
+check (UFunComp args v) env = do
+  (args', types) <- unzip <$> mapM (funtype . fname) args
+  let h:t = reverse types
+  compType <- foldM step h t
+  v' ::: vtype <- check v env
+  expect (argType compType) vtype
+  return $ UFunComp args' v' ::: compType
     where
-      f:fs = reverse arg
-      step :: ([UFun],Typ) -> UFun -> Either String ([UFun],Typ)
-      step (xs,compType) (UFName x) = case funtype x of
-                                            Just (x',t) -> do match (resultType compType) (argType t)
-                                                              return $ ((x':xs),(argType compType :->: resultType t))
-                                            Nothing -> throwError $ "unknown function: " ++ x
-      first = case funtype fname of
-                Just (f',ft) -> ([f'],ft)
-                Nothing -> ([], A)
-      UFName fname = f
+      step :: Typ -> Typ -> Either ErrMsg Typ
+      step compType atype = do match (resultType compType) (argType atype)
+                               return $ argType compType :->: resultType atype
+
+      fname (UFName f) = f
 
 check (URelation op q1 q2) env = do
   q1' ::: t1 <- check q1 env
   q2' ::: t2 <- check q2 env
   let relType = relationType op
-  typeCheck (show op) relType [t1,t2]
+  _ <- typeCheck (show op) relType [t1,t2]
   return $ (URelation op q1' q2') ::: Bool
 check (UGuard p) env = do
   p' ::: t <- check p env
@@ -195,10 +195,10 @@ check q@(UStringLit _) _env = return $ q ::: String
 
 -- |Maps function name to tree node, and checks the argument types.
 checkFun :: Id -> [Typ] -> Either String (UFun, Typ)
-checkFun f xs = case funtype f of
-                  Just (f', fType) -> do resType <- typeCheck f fType xs 
-                                         return (f', resType)
-                  Nothing -> throwError $ "unknown function: " ++ f
+checkFun f argTypes = do
+  (f', fType) <- funtype f
+  resType <- typeCheck f fType argTypes
+  return (f', resType)
 
 typeCheck :: Id -> Typ -> [Typ] -> Either String Typ
 typeCheck f t args = fst <$> tcheck t args []
@@ -247,32 +247,34 @@ tooManyParams f expected actual = throwError $ "too many parameters: " ++ f ++ "
 tooFewParams :: Id -> Int -> Int -> Either String a
 tooFewParams f expected actual = throwError $ "too few parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")"
 
+type ErrMsg = String
+
 -- |Associates function name with ast node and function which checks argument types.
-funtype :: Id -> Maybe (UFun, Typ)
-funtype "functions"   = Just (UFunctions, Mod :->: List Fun)
-funtype "name"        = Just (UName, Named A :=>: A :->: String)
-funtype "arity"       = Just (UArity, Fun :->: Int)
-funtype "null"        = Just (UNull, List A :->: Bool)
-funtype "calls"       = Just (UCalls, Fun :->: List Fun)
-funtype "path"        = Just (UPath, File :->: FilePath)
-funtype "directory"   = Just (UDir, File :->: FilePath)
-funtype "filename"    = Just (UFileName, File :->: FilePath)
-funtype "file"        = Just (UFile, Mod :->: List File)
-funtype "exported"    = Just (UExported, Fun :->: Bool)
-funtype "recursivity" = Just (URecursivity, Fun :->: FunRecursivity)
-funtype "references"  = Just (UReferences, Referencable A :=>: A :->: List Expr)
-funtype "returns"     = Just (UReturns, Fun :->: List Type)
-funtype "parameters"  = Just (UParameters, Fun :->: List FunParam)
-funtype "type"        = Just (UTypeOf, Typeable A :=>: A :->: Type)
-funtype "exprType"    = Just (UExprType, Expr :->: ExprType)
-funtype "not"         = Just (UNot, Bool :->: Bool)
-funtype "∪"           = Just (UUnion, List A :->: List A :->: List A)
-funtype "∈"           = Just (UElem, A :->: List A :->: Bool)
-funtype "⊆"           = Just (USubset, List A :->: List A :->: Bool)
-funtype "any_in"      = Just (UAnyIn, List A :->: List A :->: Bool)
-funtype "origin"      = Just (UOrigin, Expr :->: List Expr)
-funtype "reach"       = Just (UReach, Expr :->: List Expr)
-funtype _             = Nothing
+funtype :: Id -> Either ErrMsg (UFun, Typ)
+funtype "functions"   = return $ (UFunctions, Mod :->: List Fun)
+funtype "name"        = return $ (UName, Named A :=>: A :->: String)
+funtype "arity"       = return $ (UArity, Fun :->: Int)
+funtype "null"        = return $ (UNull, List A :->: Bool)
+funtype "calls"       = return $ (UCalls, Fun :->: List Fun)
+funtype "path"        = return $ (UPath, File :->: FilePath)
+funtype "directory"   = return $ (UDir, File :->: FilePath)
+funtype "filename"    = return $ (UFileName, File :->: FilePath)
+funtype "file"        = return $ (UFile, Mod :->: List File)
+funtype "exported"    = return $ (UExported, Fun :->: Bool)
+funtype "recursivity" = return $ (URecursivity, Fun :->: FunRecursivity)
+funtype "references"  = return $ (UReferences, Referencable A :=>: A :->: List Expr)
+funtype "returns"     = return $ (UReturns, Fun :->: List Type)
+funtype "parameters"  = return $ (UParameters, Fun :->: List FunParam)
+funtype "type"        = return $ (UTypeOf, Typeable A :=>: A :->: Type)
+funtype "exprType"    = return $ (UExprType, Expr :->: ExprType)
+funtype "not"         = return $ (UNot, Bool :->: Bool)
+funtype "∪"           = return $ (UUnion, List A :->: List A :->: List A)
+funtype "∈"           = return $ (UElem, A :->: List A :->: Bool)
+funtype "⊆"           = return $ (USubset, List A :->: List A :->: Bool)
+funtype "any_in"      = return $ (UAnyIn, List A :->: List A :->: Bool)
+funtype "origin"      = return $ (UOrigin, Expr :->: List Expr)
+funtype "reach"       = return $ (UReach, Expr :->: List Expr)
+funtype f             = throwError $ "unknown function: " ++ f
 
 relationType :: Binop -> Typ
 relationType Regexp = String :->: String :->: Bool
