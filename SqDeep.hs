@@ -1,7 +1,9 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverlappingInstances #-}
 module SqDeep where
 
-import Parser (Id, check, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..), query, runchk)
+import Parser (query)
+import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..))
+import TypeCheck (check, runchk)
 import Text.Parsec (parse, ParseError)
 import qualified Sq
 import Control.Monad.Error (throwError)
