@@ -80,4 +80,4 @@ check ts = run ts 0 0
             Left err -> do 
               putStrLn $ "failed test: " ++ t ++ "\nreason: " ++ err
               run ts p (f + 1))
-          `catch` (\ e -> putStrLn $ "failed test: " ++ t ++ "\nreason: " ++ show (e :: SomeException)) 
+          `catch` (\e -> putStrLn $ "failed test: " ++ t ++ "\nreason: " ++ show (e :: SomeException)) 

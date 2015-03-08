@@ -42,13 +42,11 @@ check (UAppExpr (UFName f) args) env = do
   let (args', argtypes') = unzip [(arg, argt) | arg ::: argt <- targs']
   (f', ft) <- checkFun f argtypes'
   return $ (UAppExpr f' args') ::: ft
-check (UFunComp args v) env = do
+check (UFunComp args) env = do
   (args', types) <- unzip <$> mapM (funtype . fname) args
   let h:t = reverse types
   compType <- foldM step h t
-  v' ::: vtype <- check v env
-  expect (argType compType) vtype
-  return $ UFunComp args' v' ::: compType
+  return $ UFunComp args' ::: compType
     where
       step :: Typ -> Typ -> Either ErrMsg Typ
       step compType atype = fst <$> compose atype compType []
@@ -91,6 +89,9 @@ typeCheck f t args = fst <$> tcheck t args []
                           Just b -> return (b,env)
                           Nothing -> return (a,env)
 
+      unify (a :->: b) (c :->: d) env = do 
+        env' <- unify a c env
+        unify b d env'
       unify (List a) (List b) env = unify a b env
       unify a b  env | typeVar a  = case lookup a env of 
                                       Just t -> unify t b env
@@ -137,6 +138,8 @@ funtype "⊆"           = return $ (USubset, List A :->: List A :->: Bool)
 funtype "any_in"      = return $ (UAnyIn, List A :->: List A :->: Bool)
 funtype "origin"      = return $ (UOrigin, Expr :->: List Expr)
 funtype "reach"       = return $ (UReach, Expr :->: List Expr)
+funtype "closureN"    = return $ (UClosureN, (A :->: List A) :->: Int :->: List A)
+funtype "lfp"         = return $ (ULfp, (A :->: List A) :->: List A)
 funtype f             = throwError $ "unknown function: " ++ f
 
 relationType :: Binop -> Typ

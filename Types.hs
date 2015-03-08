@@ -28,7 +28,7 @@ data TF a where
 data UQuery
     = UAppExpr UFun [UQuery]
     | UFunExpr UFun
-    | UFunComp [UFun] UQuery
+    | UFunComp [UFun]
     | UBind UQuery UF
     | UReturn UQuery
     | UVarExpr Id
@@ -77,6 +77,9 @@ data UFun
     | UTypeOf
     | UExprType
     | UExpressions
+    | UChainN
+    | UClosureN
+    | ULfp
       deriving (Show, Eq)
 
 -- |Untyped function.

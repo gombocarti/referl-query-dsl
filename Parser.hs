@@ -48,7 +48,7 @@ app = parens app
               args <- many1 argument
               return (UAppExpr (UFName f) args))
       <?> "function application"
-          where argument = initial <|> var <|> relation <|> app <|> query
+          where argument = initial <|> composition <|> var <|> relation <|> app <|> query
 
 infixSetOp :: String -> Parser UQuery
 infixSetOp op = do
@@ -80,10 +80,7 @@ composition = do
 -}
 
 composition :: Parser UQuery
-composition = do
-  fs <- funref `sepBy1` ring 
-  v <- var
-  return $ UFunComp fs v
+composition = UFunComp <$> funref `sepBy1` ring 
 
 -- query = { var <- query | query }
 
@@ -140,7 +137,7 @@ relop :: Parser Binop
 relop = (eq <|> neq <|> lte <|> lt <|> gte <|> gt <|> regexp) <* spaces
 
 eq :: Parser Binop
-eq = try $ symbol "==" `as` Eq
+eq = lexeme (symbol "==") `as` Eq
 
 neq :: Parser Binop
 neq = symbol "/=" `as` NEq
