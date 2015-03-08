@@ -1,7 +1,7 @@
 module TypeCheck where
 
 import Data.Maybe (maybe)
-import Control.Monad.Error (throwError)
+import Control.Monad.Error (throwError,catchError)
 import Control.Monad (void,foldM)
 import Control.Applicative ((<$>))
 import Text.Parsec (parse)
@@ -75,36 +75,41 @@ checkFun f argTypes = do
   return (f', resType)
 
 typeCheck :: Id -> Typ -> [Typ] -> Either String Typ
-typeCheck f t args = fst <$> tcheck t args []
+typeCheck f t args = fst <$> tcheck t args [] 1
     where 
-      tcheck (_ :->: _) [] _env = tooFewParams f (countArgs t) (length args)
-      tcheck (a :->: b) (x:xs) env = do env' <- unify a x env
-                                        tcheck b xs env'
-      tcheck (const :=>: a) args env = do res@(_,env') <- tcheck a args env
-                                          checkConst const env'
-                                          return res
-      tcheck _ (_:_) env = tooManyParams f (countArgs t) (length args)
-      tcheck (List a) [] env = do (resT, _) <- tcheck a [] env
-                                  return (List resT, env)
-      tcheck a [] env = case lookup a env of
-                          Just b -> return (b,env)
-                          Nothing -> return (a,env)
+      tcheck (_ :->: _) [] _env _ind = tooFewParams f (countArgs t) (length args)
+      tcheck (a :->: b) (x:xs) env ind = do env' <- unify a x env ind
+                                            tcheck b xs env' (ind + 1)
+      tcheck (const :=>: a) args env ind = do res@(_,env') <- tcheck a args env ind
+                                              checkConst const env'
+                                              return res
+      tcheck _ (_:_) env _ind = tooManyParams f (countArgs t) (length args)
+      tcheck (List a) [] env ind = do (resT, _) <- tcheck a [] env ind
+                                      return (List resT, env)
+      tcheck a [] env _ind | typeVar a = case lookup a env of
+                                           Just b -> return (b,env)
+                                           Nothing -> return (a,env)
+                           | otherwise = return (a,env)
 
-      unify (a :->: b) (c :->: d) env = do 
-        env' <- unify a c env
-        unify b d env'
-      unify (List a) (List b) env = unify a b env
-      unify a b  env | typeVar a  = case lookup a env of 
-                                      Just t -> unify t b env
-                                      Nothing ->  return $ (a,b):env
-                     | a == b     = return env
-                     | otherwise  = throwError $ "type error: expected: " ++ show a ++ " actual: " ++ show b
+      unify t1@(a :->: b) t2@(c :->: d) env ind =
+          catchError (do
+            env' <- unify a c env ind
+            unify b d env' ind)
+          (\_ -> throwError $ errorMsg t1 t2 ind)
+      unify (List a) (List b) env ind = unify a b env ind
+      unify a b  env ind | typeVar a  = case lookup a env of 
+                                          Just t -> unify t b env ind
+                                          Nothing ->  return $ (a,b):env
+                         | a == b     = return env
+                         | otherwise  = throwError $ errorMsg a b ind
 
-      countArgs t = tArgs t 0
+      errorMsg e a ind = "type error: expected: " ++ show e ++ " actual: " ++ show a ++ "\nat the " ++ show ind ++ ". argument of " ++ f
 
-      tArgs (_ :=>: b) n = tArgs b n
-      tArgs (_ :->: b) n = tArgs b (n + 1)
-      tArgs _          n = n
+      countArgs t = fArgs t 0
+
+      fArgs (_ :=>: b) n = fArgs b n
+      fArgs (_ :->: b) n = fArgs b (n + 1)
+      fArgs _          n = n
 
 tooManyParams :: Id -> Int -> Int -> Either String a
 tooManyParams f expected actual = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")" 
