@@ -53,6 +53,10 @@ instance Wrap String where
     wrap              = String
     unwrap (String s) = s
 
+instance Wrap (Sq.Chain Value) where
+    wrap             = Chain
+    unwrap (Chain c) = c
+
 instance Wrap a => Wrap [a] where
     wrap            = Seq . map wrap
     unwrap (Seq xs) = map unwrap xs
@@ -72,6 +76,7 @@ data Value
     | Bool Bool
     | Unit
     | Path FilePath
+    | Chain (Sq.Chain Value)
     | Seq [Value]
       deriving (Eq,Show)
 
@@ -95,7 +100,7 @@ instance Ord Value where
 
 instance Sq.Named Value where
     name (Mod m) = Sq.name m
-    name (Fun f) = Sq.name f
+    name (Fun f) = Sq.name f                   
                
 run :: String -> Either String Value
 run s = either (throwError . show) 
@@ -108,7 +113,18 @@ eval (UBind m (UF x body)) env = concatValue xs
       Seq as = eval m env
       xs = [eval body ((x,a):env) | a <- as]
 eval (UVarExpr v) env = readVar v env
-eval (UAppExpr UClosureN [UNumLit n,fs,v]) env = let f = makeFun fs in Seq $ Sq.closureN n f [eval v env]
+eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
+    where f      = makeFun fs
+          Int n' = eval n env
+eval (UAppExpr ULfp [fs,v]) env = Seq $ Sq.lfp f (eval v env)
+    where f = makeFun fs
+eval (UAppExpr UIteration [n,fs,v]) env = Seq $ Sq.iteration n' f (eval v env)
+    where f      = makeFun fs
+          Int n' = eval n env
+eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
+    where f = makeFun fs
+--eval (UAppExpr UChainN [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
+--    where f = makeFun fs
 eval (UAppExpr f args) env = evalApp f (map (flip eval env) args)
 eval UModules _env = wrap Sq.modules
 eval UFiles _env = wrap Sq.files

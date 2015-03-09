@@ -80,8 +80,10 @@ data UFun
     | UExprType
     | UExpressions
     | UChainN
+    | UChainInf
     | UClosureN
     | ULfp
+    | UIteration
       deriving (Show, Eq)
 
 -- |Untyped function.
@@ -101,6 +103,7 @@ data Binop
 -- |Types of the query language.
 data Typ
     = List Typ
+    | Chain Typ
     | File
     | Mod
     | Fun

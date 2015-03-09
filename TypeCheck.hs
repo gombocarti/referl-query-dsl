@@ -158,6 +158,9 @@ funtype "origin"      = Just (UOrigin, Expr :->: List Expr)
 funtype "reach"       = Just (UReach, Expr :->: List Expr)
 funtype "closureN"    = Just (UClosureN, Int :->: (A :->: List A) :->: A :->: List A)
 funtype "lfp"         = Just (ULfp, (A :->: List A) :->: A :->: List A)
+funtype "iteration"   = Just (UIteration, Int :->: (A :->: List A) :->: A :->: List A)
+funtype "chainN"      = Just (UChainN, Int :->: (A :->: List A) :->: A :->: List (Chain A))
+funtype "chainInf"    = Just (UChainInf, (A :->: List A) :->: A :->: List (Chain A)) 
 funtype _             = Nothing
 
 relationType :: Binop -> Typ
