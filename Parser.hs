@@ -15,7 +15,7 @@ import Types (UQuery(..),UF(..),UFun(..),Binop(..),Id)
 --- Parsers:
 
 sqDef = L.haskellStyle
-        { T.opStart = oneOf "<=>∪⊆∈"
+        { T.opStart = oneOf "<=>∪⊆∈∘"
         , T.opLetter = T.opStart sqDef
         }
 
@@ -38,8 +38,8 @@ parens     = T.parens lexer
 query :: Parser UQuery
 query = whiteSpace *> braces bind <?> "query"
 
-var :: Parser UQuery
-var = UVarExpr <$> identifier <?> "variable"
+ref :: Parser UQuery
+ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))
 
 app :: Parser UQuery
 app = parens app
@@ -48,11 +48,11 @@ app = parens app
               args <- many1 argument
               return (UAppExpr (UFName f) args))
       <?> "function application"
-          where argument = initial <|> composition <|> var <|> relation <|> app <|> query
+          where argument = numLit <|> initial <|> ref <|> composition <|> relation <|> app <|> query
 
 infixSetOp :: String -> Parser UQuery
 infixSetOp op = do
-  as <- try $ (query <|> initial <|> var <|> app) <* reservedOp op
+  as <- try $ (query <|> initial <|> ref <|> app) <* reservedOp op
   bs <- query <|> initial <|> app
   return $ UAppExpr (UFName op) [as,bs]
 
@@ -65,7 +65,6 @@ subset = infixSetOp "⊆" <?> "subset of"
 element :: Parser UQuery
 element = infixSetOp "∈" <?> "element of"
 
-funref :: Parser UFun
 funref = UFName <$> identifier <?> "function reference"
 
 ring :: Parser String
@@ -80,7 +79,7 @@ composition = do
 -}
 
 composition :: Parser UQuery
-composition = UFunComp <$> funref `sepBy1` ring 
+composition = UFunComp <$> funref `sepBy1` ring <?> "function composition"
 
 -- query = { var <- query | query }
 
@@ -110,7 +109,7 @@ vline :: Parser String
 vline = symbol "|"
 
 ret :: Parser UQuery
-ret = UReturn <$> (app <|> var <|> query)
+ret = UReturn <$> (app <|> ref <|> query)
 
 relation :: Parser UQuery
 relation = parens relation <|>
@@ -123,7 +122,7 @@ relation = parens relation <|>
            <?> "relation"
 
 relOperand :: Parser UQuery
-relOperand = app <|> var <|> numLit <|> stringLit
+relOperand = app <|> ref <|> numLit <|> stringLit
 
 stringLit :: Parser UQuery
 stringLit = UStringLit <$> stringLiteral

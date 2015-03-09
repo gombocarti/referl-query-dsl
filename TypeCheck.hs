@@ -1,12 +1,14 @@
 module TypeCheck where
 
-import Data.Maybe (maybe)
+import Data.Maybe (maybe,isJust)
 import Control.Monad.Error (throwError,catchError)
 import Control.Monad (void,foldM)
 import Control.Applicative ((<$>))
 import Text.Parsec (parse)
 import Text.Parsec.String (Parser)
 import Types
+
+import Parser
 
 runchk :: String -> Parser UQuery -> TEnv ->  Either String TUQuery
 runchk s parser env = case parse parser "" s of
@@ -32,6 +34,12 @@ check (UReturn x) e = do
 check (UVarExpr v) e = do
   tv <- getVar e v  
   return $ UVarExpr v ::: tv
+check (URef name) e | knownFun name = 
+                        do  (f,t) <- getFunType name
+                            return $ UFunRef f ::: t
+                    | otherwise = 
+                        do t <- getVar e name
+                           return $ UVarExpr name ::: t
 check UModules _env = return $ UModules ::: List Mod
 check UFiles _env = return $ UFiles ::: List File
 check UAtFile _env = return $ UAtFile ::: File
@@ -119,6 +127,9 @@ tooFewParams f expected actual = throwError $ "too few parameters: " ++ f ++ " (
 
 type ErrMsg = String
 
+knownFun :: Id -> Bool
+knownFun name = isJust . funtype $ name
+
 getFunType :: Id -> Either ErrMsg (UFun, Typ)
 getFunType f = maybe (throwError $ "unknown function: " ++ f) return (funtype f)
 
@@ -147,8 +158,8 @@ funtype "⊆"           = Just (USubset, List A :->: List A :->: Bool)
 funtype "any_in"      = Just (UAnyIn, List A :->: List A :->: Bool)
 funtype "origin"      = Just (UOrigin, Expr :->: List Expr)
 funtype "reach"       = Just (UReach, Expr :->: List Expr)
-funtype "closureN"    = Just (UClosureN, (A :->: List A) :->: Int :->: List A)
-funtype "lfp"         = Just (ULfp, (A :->: List A) :->: List A)
+funtype "closureN"    = Just (UClosureN, Int :->: (A :->: List A) :->: A :->: List A)
+funtype "lfp"         = Just (ULfp, (A :->: List A) :->: A :->: List A)
 funtype _             = Nothing
 
 relationType :: Binop -> Typ

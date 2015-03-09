@@ -107,6 +107,7 @@ eval (UBind m (UF x body)) env = concatValue xs
       Seq as = eval m env
       xs = [eval body ((x,a):env) | a <- as]
 eval (UVarExpr v) env = readVar v env
+eval (UAppExpr UClosureN [UNumLit n,fs,v]) env = let f = makeFun fs in Seq $ Sq.closureN n f [eval v env]
 eval (UAppExpr f args) env = evalApp f (map (flip eval env) args)
 eval UModules _env = wrap Sq.modules
 eval UFiles _env = wrap Sq.files
@@ -122,8 +123,10 @@ eval (URelation rel p1 p2) env = wrap $ evalRel p1' rel p2'
           p2' = eval p2 env
 eval (UGuard pred) env = if p then Seq [Unit] else Seq []
     where Bool p = eval pred env
--- works if all function returns [a] for some a:
-eval (UFunComp args v) env = foldr step (Seq [eval v env]) args
+
+-- works for all function of type a -> [a] for some a:
+makeFun (UFunRef f) = \v -> let Seq xs = evalApp f [v] in xs
+makeFun (UFunComp args) = \v -> let Seq xs = foldr step (Seq [v]) args in xs
     where
       step f (Seq val) = concatValue $ map (\arg -> evalApp f [arg]) val
 

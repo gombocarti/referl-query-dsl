@@ -34,6 +34,8 @@ data UQuery
     | UVarExpr Id
     | UGuard UQuery
     | URelation Binop UQuery UQuery
+    | UFunRef UFun
+    | URef Id
     | UStringLit String
     | UNumLit Int
     | UModules
