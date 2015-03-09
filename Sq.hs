@@ -428,7 +428,7 @@ bodya = DE { etype = FuncCall
            , ebody = "b(X + 2)."
            , efunction = a
            , evariables = [x]
-           , origin = [] -- should be [bodya] but then cant be compared for (==) when derived Eq
+           , origin = [bodya]
            , reach = []
            , eexpressions = []
            }
@@ -609,7 +609,9 @@ data DbExpression =
        , reach :: [DbExpression]
        , eexpressions :: [DbExpression]
        }
-    deriving Eq
+
+instance Eq DbExpression where
+    a == b = ebody a == ebody b && efunction a == efunction b
 
 data DbFunctionParam =
     DFP { fpexpr :: DbExpression
