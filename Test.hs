@@ -19,7 +19,7 @@ tests = [ ("{m <- modules, f <- functions m | f}", wrap [a,b,f]) -- q1
         -- q6
         , ("{m <- modules, not (name m =~ \"^test\") | m}", wrap [m1,m2])
         -- q7
-        , ("{m <- modules, f <- functions m, c <- chainInf calls f | c}", Seq [])
+        , ("{m <- modules, f <- functions m, c <- chainInf calls f | c}", Seq [Chain (Complete [SqDeep.Fun b,SqDeep.Fun a]),Chain (Complete [SqDeep.Fun b]),Chain (Complete [SqDeep.Fun f])])
         -- q8
         , ("{m <- modules, name m == \"io\" , f <- functions m, name f == \"format\", r <- references f | r}", Seq [])
         -- q9
