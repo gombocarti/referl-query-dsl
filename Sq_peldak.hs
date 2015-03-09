@@ -21,8 +21,9 @@ q2 = [typeOf p | m <- modules, name m == "mymod",
 
 -- mods[name=m1].funs[name=g].returntypes
 q3 :: [DbType]
-q3 = [returns f | m <- modules, name m == "m1", 
-                  f <- functions m, name f == "g"]
+q3 = [t | m <- modules, name m == "m1", 
+          f <- functions m, name f == "g",
+          t <- returns f]
          
 -- mods.funs[(exported = true) , (arity = 0)]
 q4 :: [DbFunction]
@@ -98,9 +99,13 @@ q18 = [c | m <- modules, f <- functions m, c <- chainInf (\g -> [c | c <- calls 
 q19 :: [Name]
 q19 = [name c | m <- modules, f <- functions m, c <- lfp calls f]
 
+{- 
+-- pointless:
+
 -- mods.funs{.calls}4
 q20 :: [Chain DbFunction]
-q20 = [c | m <- modules, f <- functions m, c <- iteration 4 calls f]
+q20 = [c | m <- modules, f <- functions m, c <- chainIteration 4 calls f]
+-}
 
 -- mods.funs=A.calls=A
 q21 :: [DbFunction]
