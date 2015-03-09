@@ -43,14 +43,8 @@ u = Data.List.union
 
 -- closures, chains
 
-closureN :: Int -> (a -> [a]) -> [a] -> [a]
-closureN n f xs = concat . take n . iterate (concatMap f) $ xs
-
-{-
-closureInf :: Eq a => (a -> [a]) -> [a] -> [a]
-closureInf f xs = foldl g $ iterate (map f) xs
-    where g xs ys = undefined
--}
+closureN :: Int -> (a -> [a]) -> a -> [a]
+closureN n f x = concat . take n . iterate (concatMap f) $ [x]
 
 lfp :: Eq a => (a -> [a]) -> a -> [a]
 lfp f xs = loop [] [xs]
@@ -60,15 +54,13 @@ lfp f xs = loop [] [xs]
                            then old'
                            else loop old' new
 
-{-
-chainN :: Int -> (a -> [a]) -> [a] -> [[a]]
-chainN n f xs = 
--}
+iteration :: Eq a => Int -> (a -> [a]) -> a -> [a]
+iteration n f x = iterate (concatMap f) [x] !! n
 
 data Chain a = Incomplete [a]
              | Complete [a]
              | Recursive [a]
-               deriving Show
+               deriving (Show,Eq)
 
 chainInf :: Eq a => (a -> [a]) -> a -> [Chain a]
 chainInf f x = loop [] [Incomplete [x]]
@@ -89,16 +81,24 @@ chainInf f x = loop [] [Incomplete [x]]
           isComplete (Complete _) = True
           isComplete _            = False
 
+{-
+-- TODO
+chainN :: Int -> (a -> [a]) -> [a] -> [[a]]
+chainN n f xs = 
+-}
 
-iteration :: Int -> (a -> [a]) -> a -> [Chain a]
-iteration n f x = Complete <$> loop n [[x]]
+{-
+-- pointless:
+
+chainIteration :: Int -> (a -> [a]) -> a -> [Chain a]
+chainIteration n f x = Complete <$> loop n [[x]]
     where loop 0 chains = chains
           loop n chains = loop (n - 1) (concatMap cont chains)
 
           cont chain@(x:_)   = case f x of 
                                   [] -> [chain]
                                   ys -> [y:chain | y <- ys]
-
+-}
 
 -- selectors and properties
 
@@ -121,6 +121,9 @@ instance Named DbVariable where
 
 instance Named DbRecord where
     name = rname
+
+instance Named DbRecordField where
+    name = fieldName
 
 
 functions :: DbModule -> [DbFunction]
@@ -158,6 +161,9 @@ instance Referencable DbVariable where
 
 instance Referencable DbRecord where
     references = rreferences
+
+instance Referencable DbRecordField where
+    references = fieldReferences
 
 returns :: DbFunction -> [DbType]
 returns = freturns
