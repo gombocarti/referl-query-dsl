@@ -134,7 +134,7 @@ relop :: Parser Binop
 relop = (eq <|> neq <|> lte <|> lt <|> gte <|> gt <|> regexp) <* spaces
 
 eq :: Parser Binop
-eq = lexeme (symbol "==") `as` Eq
+eq = try (symbol "==") `as` Eq
 
 neq :: Parser Binop
 neq = symbol "/=" `as` NEq
