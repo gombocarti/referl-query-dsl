@@ -1,14 +1,12 @@
 module TypeCheck where
 
-import Data.Maybe (maybe,isJust)
+import Data.Maybe (isJust)
 import Control.Monad.Error (throwError,catchError)
-import Control.Monad (void,foldM)
+import Control.Monad (foldM)
 import Control.Applicative ((<$>))
 import Text.Parsec (parse)
 import Text.Parsec.String (Parser)
 import Types
-
-import Parser
 
 runchk :: String -> Parser UQuery -> TEnv ->  Either String TUQuery
 runchk s parser env = case parse parser "" s of

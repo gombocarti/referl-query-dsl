@@ -422,7 +422,7 @@ bodya = DE { etype = FuncCall
            , ebody = "b(X + 2)."
            , efunction = a
            , evariables = [x]
-           , origin = []
+           , origin = [] -- should be [bodya] but then cant be compared for (==) when derived Eq
            , reach = []
            , eexpressions = []
            }

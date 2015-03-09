@@ -5,12 +5,10 @@ import Text.Parsec.String
 import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
-import qualified Sq (DbModule, DbFunction, Named, FileType)
 import Control.Applicative ((<$>))
 import Prelude hiding (filter)
-import Data.Maybe (fromJust)
 
-import Types (UQuery(..),UF(..),UFun(..),Binop(..),Id)
+import Types (UQuery(..),UF(..),UFun(..),Binop(..))
 
 --- Parsers:
 
