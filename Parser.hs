@@ -43,10 +43,10 @@ app :: Parser UQuery
 app = parens app
       <|>
       try (do f <- identifier
-              args <- many1 argument
+              args <- many1 (argument <|> parens argument)
               return (UAppExpr (UFName f) args))
       <?> "function application"
-          where argument = numLit <|> initial <|> parens app <|> ref <|> relation <|> composition <|> query
+          where argument = numLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> query
 
 infixSetOp :: String -> Parser UQuery
 infixSetOp op = 
@@ -113,8 +113,7 @@ ret :: Parser UQuery
 ret = UReturn <$> (app <|> ref <|> query)
 
 relation :: Parser UQuery
-relation = parens relation <|>
-           do rel <- try $ do 
+relation = do rel <- try $ do 
                        a1 <- relOperand
                        rel <- relop
                        return $ URelation rel a1
