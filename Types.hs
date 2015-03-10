@@ -86,6 +86,9 @@ data UFun
     | UClosureN
     | ULfp
     | UIteration
+    | UMax
+    | UMin
+    | UAverage
       deriving (Show, Eq)
 
 -- |Untyped function.
@@ -136,6 +139,7 @@ data TypConstraint
     | Typeable Typ
     | MultiLine Typ
     | MultiExpression Typ
+    | Ord Typ
       deriving (Show,Eq)
 
 infixr 4 :->:

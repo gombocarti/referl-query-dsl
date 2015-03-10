@@ -301,12 +301,17 @@ all_in = subset
 
 -- aggregate functions
 
-average :: [Int] -> Int
-average xs = round $ (fromIntegral $ sum xs) / (fromIntegral $ length xs)
+average :: [Int] -> [Int]
+average [] = []
+average xs = [round $ (fromIntegral $ sum xs) / (fromIntegral $ length xs)]
 
 max :: Ord a => [a] -> [a]
 max [] = []
 max xs = [maximum xs]
+
+min :: Ord a => [a] -> [a]
+min [] = []
+min xs = [minimum xs]
 
 -- initial selectors
 

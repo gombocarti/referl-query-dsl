@@ -34,7 +34,16 @@ decimal    = T.decimal lexer
 parens     = T.parens lexer
 
 query :: Parser UQuery
-query = whiteSpace *> braces bind <?> "query"
+query = (braces bind) <?> "query"
+
+aggregate :: Parser UQuery
+aggregate = do
+  f <- identifier
+  q <- query
+  return $ UAppExpr (UFName f) [q]
+
+start :: Parser UQuery
+start = whiteSpace *> (query <|> aggregate)
 
 ref :: Parser UQuery
 ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))

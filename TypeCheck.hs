@@ -165,6 +165,9 @@ funtype "lfp"         = Just (ULfp, (A :->: List A) :->: A :->: List A)
 funtype "iteration"   = Just (UIteration, Int :->: (A :->: List A) :->: A :->: List A)
 funtype "chainN"      = Just (UChainN, Int :->: (A :->: List A) :->: A :->: List (Chain A))
 funtype "chainInf"    = Just (UChainInf, (A :->: List A) :->: A :->: List (Chain A)) 
+funtype "max"         = Just (UMax, Ord A :=>: List A :->: List A)
+funtype "min"         = Just (UMin, Ord A :=>: List A :->: List A)
+funtype "average"     = Just (UAverage, List Int :->: List Int)
 funtype _             = Nothing
 
 relationType :: Binop -> Typ
@@ -193,6 +196,10 @@ multiexpr :: Typ -> Either String ()
 multiexpr t | t `elem` [Fun,Expr] = return ()
             | otherwise = throwError $ "doesn't have expressions: " ++ show t
 
+ord :: Typ -> Either String ()
+ord t | t `elem` [Int,String,Bool] = return ()
+      | otherwise = throwError $ "can't be ordered: " ++ show t
+
 type TypEnv = [(Typ,Typ)]
 
 checkConst :: TypConstraint -> TypEnv -> Either ErrMsg ()
@@ -202,6 +209,7 @@ checkConst const env = case const of
                          Typeable a        -> getTyp a >>= typeable
                          MultiLine a       -> getTyp a >>= multiline
                          MultiExpression a -> getTyp a >>= multiexpr
+                         Ord a             -> getTyp a >>= ord
     where getTyp a = case lookup a env of
                        Just t  -> return t
                        Nothing -> throwError "constraint error"

@@ -2,7 +2,7 @@
 module SqDeep where
 
 import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..))
-import Parser (query)
+import Parser (start)
 import TypeCheck (check)
 import Text.Parsec (parse)
 import Control.Monad.Error (throwError)
@@ -115,7 +115,7 @@ instance Sq.Named Value where
 run :: String -> Either String Value
 run s = either (throwError . show) 
         (\q -> do { q' ::: _ <- check q []; return $ eval q' [] })
-        (parse query "" s)
+        (parse start "" s)
 
 run' :: String -> IO ()
 run' s = case run s of
@@ -214,6 +214,9 @@ evalApp UExpressions [arg] =
     case arg of
       Fun f  -> wrap . Sq.expressions $ f
       Expr e -> wrap . Sq.expressions $ e
+evalApp UMax [Seq xs] = Seq . Sq.max $ xs
+evalApp UMin [Seq xs] = Seq . Sq.min $ xs
+evalApp UAverage [xs] = wrap . Sq.average . unwrap $ xs
 
 readVar :: Id -> Env -> Value
 readVar v env = case lookup v env of
