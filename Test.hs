@@ -43,7 +43,7 @@ tests = [ ("{m <- modules, f <- functions m | f}", wrap [a,b,f]) -- q1
         -- q18
         , ("{m <- modules, f <- functions m, c <- chainInf (\\g -> [c | c <- calls g, name c == name g ]) f | c}", Seq []) -- ennek nem üres lista az eredménye
         -- q19
-        , ("{m <- modules, f <- functions m, c <- lfp calls f | c}", Seq []) -- ennek sem
+        , ("{m <- modules, f <- functions m, c <- lfp calls f | c}", wrap [a,b,b,f]) 
         -- q20
         , ("{m <- modules, f <- functions m, c <- iteration 4 calls f | c}", Seq [])
         -- q21
