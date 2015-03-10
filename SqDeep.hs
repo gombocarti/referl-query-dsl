@@ -117,6 +117,11 @@ run s = either (throwError . show)
         (\q -> do { q' ::: _ <- check q []; return $ eval q' [] })
         (parse query "" s)
 
+run' :: String -> IO ()
+run' s = case run s of
+           Left err -> putStrLn err
+           Right v -> print v
+
 eval :: UQuery -> Env -> Value
 eval (UBind m (UF x body)) env = concatValue xs
     where
