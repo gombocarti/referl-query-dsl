@@ -47,11 +47,11 @@ tests = [ ("{m <- modules, f <- functions m | f}", wrap [a,b,f]) -- q1
         -- q20
         , ("{m <- modules, f <- functions m, c <- iteration 4 calls f | c}", Seq [])
         -- q21
-        , ("{m <- modules, f <- functions m, f € calls f | f}", Seq [])
+        , ("{m <- modules, f <- functions m, f ∈ calls f | f}", Seq [])
         -- q22
         , ("{m <- modules, f <- functions m, not (null (calls f)) | f}", wrap [a])
         -- q23
-        , ("{m <- modules, f <- functions m, name f € {name c | c <- calls f} | f}", Seq [])
+        , ("{m <- modules, f <- functions m, name f ∈ {name c | c <- calls f} | f}", Seq [])
         -- q24
         , ("average {f <- functions atModule, l <- loc f | l}", wrap (2 :: Int))
         -- q25
