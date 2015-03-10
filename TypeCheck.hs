@@ -136,12 +136,14 @@ funtype :: Id -> Maybe (UFun, Typ)
 funtype "functions"   = Just (UFunctions, Mod :->: List Fun)
 funtype "name"        = Just (UName, Named A :=>: A :->: String)
 funtype "arity"       = Just (UArity, Fun :->: Int)
+funtype "loc"         = Just (ULoc, MultiLine A :=>: A :->: List Int)
 funtype "null"        = Just (UNull, List A :->: Bool)
 funtype "calls"       = Just (UCalls, Fun :->: List Fun)
 funtype "path"        = Just (UPath, File :->: FilePath)
 funtype "directory"   = Just (UDir, File :->: FilePath)
 funtype "filename"    = Just (UFileName, File :->: FilePath)
 funtype "file"        = Just (UFile, Mod :->: List File)
+funtype "records"     = Just (URecords, File :->: List Record)
 funtype "exported"    = Just (UExported, Fun :->: Bool)
 funtype "recursivity" = Just (URecursivity, Fun :->: FunRecursivity)
 funtype "references"  = Just (UReferences, Referencable A :=>: A :->: List Expr)
@@ -149,6 +151,7 @@ funtype "returns"     = Just (UReturns, Fun :->: List Type)
 funtype "parameters"  = Just (UParameters, Fun :->: List FunParam)
 funtype "type"        = Just (UTypeOf, Typeable A :=>: A :->: Type)
 funtype "exprType"    = Just (UExprType, Expr :->: ExprType)
+funtype "expressions" = Just (UExpressions, MultiExpression A :=>: A :->: List Expr)
 funtype "not"         = Just (UNot, Bool :->: Bool)
 funtype "∪"           = Just (UUnion, List A :->: List A :->: List A)
 funtype "∈"           = Just (UElem, A :->: List A :->: Bool)
@@ -156,6 +159,7 @@ funtype "⊆"           = Just (USubset, List A :->: List A :->: Bool)
 funtype "any_in"      = Just (UAnyIn, List A :->: List A :->: Bool)
 funtype "origin"      = Just (UOrigin, Expr :->: List Expr)
 funtype "reach"       = Just (UReach, Expr :->: List Expr)
+funtype "fields"      = Just (UFields, Record :->: List RecordField)
 funtype "closureN"    = Just (UClosureN, Int :->: (A :->: List A) :->: A :->: List A)
 funtype "lfp"         = Just (ULfp, (A :->: List A) :->: A :->: List A)
 funtype "iteration"   = Just (UIteration, Int :->: (A :->: List A) :->: A :->: List A)
@@ -169,25 +173,35 @@ relationType _      = A :->: A :->: Bool
 
 -- |Decides whether the particular type have name function.
 named :: Typ -> Either String ()
-named t | t `elem` [File,Mod,Fun,Record] = return ()
+named t | t `elem` [File,Mod,Fun,Record,RecordField] = return ()
         | otherwise = throwError $ "dont have name: " ++ show t
 
 -- |Decides whether the particular type is referencable.
 referencable :: Typ -> Either String ()
-referencable t | t `elem` [Fun,Record] = return ()
+referencable t | t `elem` [Fun,Record,RecordField] = return ()
                | otherwise = throwError $ "not referencable: " ++ show t
                              
 typeable :: Typ -> Either String ()
-typeable t | t `elem` [FunParam, RecordField] = return ()
+typeable t | t `elem` [FunParam,RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
+
+multiline :: Typ -> Either String ()
+multiline t | t `elem` [File,Mod,Fun] = return ()
+            | otherwise = throwError $ "can't count line of codes: " ++ show t
+
+multiexpr :: Typ -> Either String ()
+multiexpr t | t `elem` [Fun,Expr] = return ()
+            | otherwise = throwError $ "doesn't have expressions: " ++ show t
 
 type TypEnv = [(Typ,Typ)]
 
 checkConst :: TypConstraint -> TypEnv -> Either ErrMsg ()
 checkConst const env = case const of
-                         Named a        -> getTyp a >>= named
-                         Referencable a -> getTyp a >>= referencable
-                         Typeable a     -> getTyp a >>= typeable
+                         Named a           -> getTyp a >>= named
+                         Referencable a    -> getTyp a >>= referencable
+                         Typeable a        -> getTyp a >>= typeable
+                         MultiLine a       -> getTyp a >>= multiline
+                         MultiExpression a -> getTyp a >>= multiexpr
     where getTyp a = case lookup a env of
                        Just t  -> return t
                        Nothing -> throwError "constraint error"

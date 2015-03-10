@@ -56,6 +56,7 @@ data UFun
     | UFileName  -- ^ Name of a loaded file.
     | UIsModule  -- ^ True if the file contains a module.
     | UFile      -- ^ File of a module.
+    | URecords   -- ^ Records defined in a file.
     | UExports   -- ^ Exported functions of a module.
     | UImports   -- ^ Imported functions of a module.
     | ULoc       -- ^ Line of code.
@@ -76,6 +77,7 @@ data UFun
     | UParameters
     | UOrigin
     | UReach
+    | UFields      -- ^ Fields of a record.
     | UTypeOf
     | UExprType
     | UExpressions
@@ -132,6 +134,8 @@ data TypConstraint
     = Named Typ
     | Referencable Typ
     | Typeable Typ
+    | MultiLine Typ
+    | MultiExpression Typ
       deriving (Show,Eq)
 
 infixr 4 :->:

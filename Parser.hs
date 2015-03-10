@@ -63,6 +63,7 @@ subset = infixSetOp "⊆" <?> "subset of"
 element :: Parser UQuery
 element = infixSetOp "∈" <?> "element of"
 
+funref :: Parser UFun
 funref = UFName <$> identifier <?> "function reference"
 
 ring :: Parser String
@@ -95,7 +96,7 @@ bindable :: Parser UQuery
 bindable = initial <|> app <|> union <|> query
 
 following :: Parser UQuery
-following = (comma *> (filter <|> bind)) <|> (vline *> ret)
+following = (comma *> (bind <|> filter)) <|> (vline *> ret)
 
 filter :: Parser UQuery
 filter = do
@@ -143,13 +144,13 @@ lt :: Parser Binop
 lt = symbol "<" `as` Lt
 
 lte :: Parser Binop
-lte = symbol "<=" `as` Lte
+lte = try (symbol "<=") `as` Lte
 
 gt :: Parser Binop
 gt = symbol ">" `as` Gt
 
 gte :: Parser Binop
-gte = symbol ">=" `as` Gte
+gte = try (symbol ">=") `as` Gte
 
 regexp :: Parser Binop
 regexp = symbol "=~" `as` Regexp

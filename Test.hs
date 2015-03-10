@@ -27,13 +27,13 @@ tests = [ ("{m <- modules, f <- functions m | f}", wrap [a,b,f]) -- q1
         -- q9' (j)
         , ("{r <- references atFunction, o <- origin r | o}", Seq [])
         -- q10
-        , ("{m <- modules , file <- mfile m, r <- records file, name r == \"p\", f <- fields r, name f == \"name\", r <- references f | r}", wrap [newrecord]) -- névelfedés (r)!
+        , ("{m <- modules , f <- file m, r <- records f, name r == \"p\", f <- fields r, name f == \"name\", r <- references f | r}", wrap [newrecord]) -- névelfedés (r)!
         -- q11
         , ("{m <- modules, l <- loc m, l > 400 | m}", Seq [])
         -- q12
-        , ("{m <- modules, f <- functions m, l <- loc f, l < 20 | f)", wrap [a,b,f])
+        , ("{m <- modules, f <- functions m, l <- loc f, l < 20 | f}", wrap [a,b,f])
         -- q13
-        , ("{f <- functions atModule, m <- max [depth e | e <- expressions f, type e == Case], m > 2 | f}", Seq [])
+        , ("{f <- functions atModule, m <- max {e <- expressions f, exprType e == Case | dept e}, m > 2 | f}", Seq [])
         -- q14
         , ("max {f <- functions atModule, e <- expressions f, type e == Case | depth e}", Seq [])
         -- q15

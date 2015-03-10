@@ -33,6 +33,14 @@ instance Wrap Sq.DbExpression where
     wrap            = Expr
     unwrap (Expr e) = e
 
+instance Wrap Sq.DbRecord where
+    wrap           = Rec
+    unwrap (Rec r) = r
+
+instance Wrap Sq.DbRecordField where
+    wrap                = RecField
+    unwrap (RecField f) = f
+
 instance Wrap Sq.DbType where
     wrap            = Type
     unwrap (Type t) = t
@@ -99,8 +107,10 @@ instance Ord Value where
     (Bool a) <= (Bool b) = a <= b
 
 instance Sq.Named Value where
-    name (Mod m) = Sq.name m
-    name (Fun f) = Sq.name f                   
+    name (Mod m)      = Sq.name m
+    name (Fun f)      = Sq.name f
+    name (RecField f) = Sq.name f
+    name (Rec r)      = Sq.name r
                
 run :: String -> Either String Value
 run s = either (throwError . show) 
@@ -165,6 +175,10 @@ evalRel a Regexp b = s =~ regex
 evalApp :: UFun -> [Value] -> Value
 evalApp UName [arg] = wrap . Sq.name $ arg
 evalApp UArity [Fun f] = wrap . Sq.arity $ f
+evalApp ULoc [arg] = case arg of
+                       Fun f -> wrap . Sq.loc $ f
+                       File f -> wrap . Sq.loc $ f
+                       Mod m -> wrap . Sq.loc $ m
 evalApp UNot [Bool pred] = wrap $ not pred
 evalApp UNull [Seq xs] = wrap $ null xs
 evalApp UElem [a,Seq bs] = wrap $ a `elem` bs
@@ -172,8 +186,10 @@ evalApp USubset [Seq as,Seq bs] = wrap $ as `Sq.all_in` bs
 evalApp UAnyIn [Seq as,Seq bs] = wrap $ as `Sq.any_in` bs
 evalApp UUnion [Seq as,Seq bs] = Seq $ as `union` bs
 evalApp UCalls [Fun f] = wrap $  Sq.fcalls f
-evalApp UFunctions [Mod m] = wrap $ Sq.functions m
+evalApp UFunctions [Mod m] = wrap . Sq.functions $ m
+evalApp URecords [File f] = wrap . Sq.frecords $ f
 evalApp UExported [Fun f] = wrap . Sq.fexported $ f
+evalApp UFile [Mod m] = wrap . Sq.mfile $ m
 evalApp UPath [File f] = wrap . Sq.fpath $ f
 evalApp UDir [File f] = wrap . Sq.dir $ f
 evalApp UFileName [File f] = wrap . Sq.filename $ f
@@ -183,9 +199,16 @@ evalApp UTypeOf [arg] = case arg of
                           Expr e -> wrap . Sq.etype $ e
 evalApp UReturns [Fun f] = wrap . Sq.returns $ f
 evalApp UOrigin [Expr expr] = wrap . Sq.origin $ expr
-evalApp UReferences [arg] = case arg of
-                              Fun f -> wrap . Sq.freferences $ f
-                              Rec r -> wrap . Sq.rreferences $ r
+evalApp UFields [Rec r] = wrap . Sq.rfields $ r
+evalApp UReferences [arg] = 
+    case arg of
+      Fun f      -> wrap . Sq.freferences $ f
+      Rec r      -> wrap . Sq.rreferences $ r
+      RecField f -> wrap . Sq.fieldReferences $ f
+evalApp UExpressions [arg] =
+    case arg of
+      Fun f  -> wrap . Sq.expressions $ f
+      Expr e -> wrap . Sq.expressions $ e
 
 readVar :: Id -> Env -> Value
 readVar v env = case lookup v env of
