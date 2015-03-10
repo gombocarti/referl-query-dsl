@@ -43,16 +43,18 @@ app :: Parser UQuery
 app = parens app
       <|>
       try (do f <- identifier
-              args <- many1 argument
+              args <- many1 (parens argument <|> argument)
               return (UAppExpr (UFName f) args))
       <?> "function application"
-          where argument = numLit <|> initial <|> ref <|> composition <|> relation <|> app <|> query
+          where argument = numLit <|> initial <|> app <|> ref <|> relation <|> composition <|> query
 
 infixSetOp :: String -> Parser UQuery
-infixSetOp op = do
-  as <- try $ (query <|> initial <|> ref <|> app) <* reservedOp op
-  bs <- query <|> initial <|> app
-  return $ UAppExpr (UFName op) [as,bs]
+infixSetOp op = 
+    parens (infixSetOp op) 
+    <|> do
+      as <- try $ (query <|> initial <|> app <|> ref) <* reservedOp op
+      bs <- query <|> initial <|> app
+      return $ UAppExpr (UFName op) [as,bs]
 
 union :: Parser UQuery
 union = infixSetOp "∪" <?> "union"
@@ -93,7 +95,7 @@ bindop :: Parser String
 bindop = symbol "<-"
 
 bindable :: Parser UQuery
-bindable = initial <|> app <|> union <|> query
+bindable = initial <|> union <|> query <|> app
 
 following :: Parser UQuery
 following = (comma *> (bind <|> filter)) <|> (vline *> ret)

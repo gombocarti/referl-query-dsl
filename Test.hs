@@ -53,15 +53,15 @@ tests = [ ("{m <- modules, f <- functions m | f}", wrap [a,b,f]) -- q1
         -- q23
         , ("{m <- modules, f <- functions m, name f € {name c | c <- calls f} | f}", Seq [])
         -- q24
-        , ("average {f <- functions atModule, l <- loc f| l}", wrap (2 :: Int))
+        , ("average {f <- functions atModule, l <- loc f | l}", wrap (2 :: Int))
         -- q25
-        , ("{m <- modules, f <- functions m, calls f `any_in` {f | m <- modules, name m == \"m1\", f <- functions m} | f}", wrap [a])
+        , ("{m <- modules, f <- functions m, any_in (calls f) {m <- modules, name m == \"m1\", f <- functions m | f} | f}", wrap [a])
         -- q26
-        , ("{m <- modules, name m == \"m1\", f <- (functions m ∪ {c | f <- functions m , c <- calls f} | name f}", wrap . map fname $ [a,b])
+        , ("{m <- modules, name m == \"m1\", f <- (functions m ∪ {f <- functions m , c <- calls f | c}) | name f}", wrap . map fname $ [a,b])
         -- q27
-        , ("{m1 <- modules, name m1 == \"m1\" , m2 <- modules, name m2 == \"m2\" , f <- (functions m1) ÷ (functions m2)}", wrap [a,b,f])
+        , ("{m1 <- modules, name m1 == \"m1\" , m2 <- modules, name m2 == \"m2\" , f <- (functions m1) ∪ (functions m2) | f}", wrap [a,b,f])
         -- q28
-        , ("{m <- modules, f <- mfile m | path f}", wrap . map path . concatMap mfile $ [m1,m2])
+        , ("{m <- modules, f <- file m | path f}", wrap . map path . concatMap mfile $ [m1,m2])
         ]
 
 check :: [TestCase] -> IO ()
