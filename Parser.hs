@@ -102,7 +102,7 @@ following = (comma *> (bind <|> filter)) <|> (vline *> ret)
 
 filter :: Parser UQuery
 filter = do
-  f <- relation <|> subset <|> app
+  f <- relation <|> subset <|> element <|> app
   rest <- following
   return (UBind (UGuard f) (UF "()" rest))
 
