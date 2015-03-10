@@ -50,11 +50,11 @@ app = parens app
 
 infixSetOp :: String -> Parser UQuery
 infixSetOp op = 
-    parens (infixSetOp op) 
-    <|> do
+    do
       as <- try $ (query <|> initial <|> app <|> ref) <* reservedOp op
       bs <- query <|> initial <|> app
       return $ UAppExpr (UFName op) [as,bs]
+    <|> parens (infixSetOp op)
 
 union :: Parser UQuery
 union = infixSetOp "∪" <?> "union"
