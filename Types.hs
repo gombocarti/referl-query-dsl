@@ -36,6 +36,7 @@ data UQuery
     | URelation Binop UQuery UQuery
     | UFunRef UFun
     | URef Id
+    | UDataConst Id
     | UStringLit String
     | UNumLit Int
     | UExprTypeLit Sq.ExprType

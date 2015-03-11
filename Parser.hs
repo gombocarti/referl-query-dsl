@@ -13,7 +13,8 @@ import Types (UQuery(..),UF(..),UFun(..),Binop(..))
 --- Parsers:
 
 sqDef = L.haskellStyle
-        { T.opStart = oneOf "<=>∪⊆∈∘"
+        { T.identStart = lower
+        , T.opStart = oneOf "<=>∪⊆∈∘"
         , T.opLetter = T.opStart sqDef
         }
 
@@ -57,6 +58,13 @@ start = whiteSpace *> (query <|> aggregate)
 
 ref :: Parser UQuery
 ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))
+
+dataConst :: Parser UQuery
+dataConst = UDataConst <$> cons
+    where cons = lexeme $ do 
+                   c <- upper
+                   s <- many alphaNum
+                   return $ c:s
 
 app :: Parser UQuery
 app = parens app
@@ -141,7 +149,7 @@ relation = do rel <- try $ do
            <?> "relation"
 
 relOperand :: Parser UQuery
-relOperand = app <|> ref <|> numLit <|> stringLit
+relOperand = app <|> ref <|> numLit <|> stringLit <|> dataConst
 
 stringLit :: Parser UQuery
 stringLit = UStringLit <$> stringLiteral
