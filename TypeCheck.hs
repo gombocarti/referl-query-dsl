@@ -40,8 +40,11 @@ check (URef name) e | knownFun name =
                         case readMaybe name of 
                           Just x -> return $ UExprTypeLit x ::: ExprType
                           Nothing -> do
-                            t <- getVar e name
-                            return $ UVarExpr name ::: t
+                            case readMaybe name of
+                              Just x -> return $ UFunRecurLit x ::: FunRecursivity
+                              Nothing -> do
+                                       t <- getVar e name
+                                       return $ UVarExpr name ::: t
 check UModules _env = return $ UModules ::: List Mod
 check UFiles _env = return $ UFiles ::: List File
 check UAtFile _env = return $ UAtFile ::: File

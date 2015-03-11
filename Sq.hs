@@ -233,7 +233,7 @@ calls = fcalls
 data DbFunctionType = NonRecursive 
                     | NonTailRecursive
                     | TailRecursive
-                      deriving (Show, Eq)
+                      deriving (Show,Eq,Read)
                    
 data ExprType
     = FuncCall

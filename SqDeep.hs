@@ -49,6 +49,10 @@ instance Wrap Sq.ExprType where
     wrap            = ExprType
     unwrap (ExprType t) = t
 
+instance Wrap Sq.DbFunctionType where
+    wrap                       = FunRecursivity
+    unwrap (FunRecursivity fr) = fr
+
 instance Wrap Int where
     wrap           = Int
     unwrap (Int n) = n
@@ -79,6 +83,7 @@ data Value
     | Rec Sq.DbRecord
     | RecField Sq.DbRecordField
     | ExprType Sq.ExprType
+    | FunRecursivity Sq.DbFunctionType
     | String String
     | Int Int
     | Bool Bool
@@ -151,6 +156,7 @@ eval (UReturn e) env = Seq [eval e env]
 eval (UStringLit s) _env = wrap s
 eval (UNumLit i) _env = wrap i
 eval (UExprTypeLit t) _env = wrap t
+eval (UFunRecurLit fr) _env = wrap fr
 eval (URelation rel p1 p2) env = wrap $ evalRel p1' rel p2'
     where p1' = eval p1 env
           p2' = eval p2 env
@@ -203,6 +209,7 @@ evalApp UTypeOf [arg] = case arg of
                           FunParam p -> wrap . Sq.fptype $ p
                           RecField f -> wrap . Sq.fieldType $ f
 evalApp UExprType [Expr e] = wrap . Sq.etype $ e
+evalApp URecursivity [Fun f] = wrap . Sq.frecursive $ f
 evalApp UReturns [Fun f] = wrap . Sq.returns $ f
 evalApp UOrigin [Expr expr] = wrap . Sq.origin $ expr
 evalApp UFields [Rec r] = wrap . Sq.rfields $ r
