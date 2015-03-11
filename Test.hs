@@ -35,7 +35,7 @@ tests = [ ("{m <- modules, f <- functions m | f}", wrap [a,b,f]) -- q1
         -- q13
         , ("{f <- functions atModule, m <- max {e <- expressions f, exprType e == Case | dept e}, m > 2 | f}", Seq [])
         -- q14
-        , ("max {f <- functions atModule, e <- expressions f, type e == Case | depth e}", Seq [])
+        , ("max {f <- functions atModule, e <- expressions f, exprType e == Case | depth e}", Seq [])
         -- q15
         , ("{m <- modules, f <- functions m, recursivity f == NonTailRecursive | f}", Seq [])
         -- q16
@@ -53,7 +53,7 @@ tests = [ ("{m <- modules, f <- functions m | f}", wrap [a,b,f]) -- q1
         -- q23
         , ("{m <- modules, f <- functions m, name f ∈ {c <- calls f | name c} | f}", Seq [])
         -- q24
-        , ("average {f <- functions atModule, l <- loc f | l}", wrap (2 :: Int))
+        , ("average {f <- functions atModule, l <- loc f | l}", wrap [2 :: Int])
         -- q25
         , ("{m <- modules, f <- functions m, any_in (calls f) {m <- modules, name m == \"m1\", f <- functions m | f} | f}", wrap [a])
         -- q26
