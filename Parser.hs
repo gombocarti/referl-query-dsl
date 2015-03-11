@@ -6,7 +6,9 @@ import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
 import Control.Applicative ((<$>))
+import Control.Monad.Identity
 import Prelude hiding (filter)
+import Data.Maybe (fromJust)
 
 import Types (UQuery(..),UF(..),UFun(..),Binop(..))
 
@@ -34,39 +36,42 @@ comma      = T.comma lexer
 decimal    = T.decimal lexer
 parens     = T.parens lexer
 
-query :: Parser UQuery
-query = braces bind <?> "query"
+type QParser a = ParsecT String (Maybe UQuery) Identity a
 
-{-
-query :: Parser UQuery
+{-             
+query :: QParser UQuery
+query = braces bind <?> "query"
+-}
+
+query :: QParser UQuery
 query = braces (do
           r <- ret
-          vline
+          _ <- vline
+          putState . Just $ r
           b <- bind
           return $ UBind b (UF "()" r))
         <?> "query"
--}
 
-aggregate :: Parser UQuery
+aggregate :: QParser UQuery
 aggregate = do
   f <- identifier
   q <- query
   return $ UAppExpr (UFName f) [q]
 
-start :: Parser UQuery
+start :: QParser UQuery
 start = whiteSpace *> (query <|> aggregate)
 
-ref :: Parser UQuery
+ref :: QParser UQuery
 ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))
 
-dataConst :: Parser UQuery
+dataConst :: QParser UQuery
 dataConst = UDataConst <$> cons
     where cons = lexeme $ do 
                    c <- upper
                    s <- many alphaNum
                    return $ c:s
 
-app :: Parser UQuery
+app :: QParser UQuery
 app = parens app
       <|>
       try (do f <- identifier
@@ -75,7 +80,7 @@ app = parens app
       <?> "function application"
           where argument = numLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> query
 
-infixSetOp :: String -> Parser UQuery
+infixSetOp :: String -> QParser UQuery
 infixSetOp op = 
     do
       as <- try $ (query <|> initial <|> app <|> ref) <* reservedOp op
@@ -83,63 +88,66 @@ infixSetOp op =
       return $ UAppExpr (UFName op) [as,bs]
     <|> parens (infixSetOp op)
 
-union :: Parser UQuery
+union :: QParser UQuery
 union = infixSetOp "∪" <?> "union"
 
-subset :: Parser UQuery
+subset :: QParser UQuery
 subset = infixSetOp "⊆" <?> "subset of"
 
-element :: Parser UQuery
+element :: QParser UQuery
 element = infixSetOp "∈" <?> "element of"
 
-funref :: Parser UFun
+funref :: QParser UFun
 funref = UFName <$> identifier <?> "function reference"
 
-ring :: Parser String
+ring :: QParser String
 ring = lexeme $ string "∘"
 
 {-
-composition :: Parser UQuery
+composition :: QParser UQuery
 composition = do
   f <- try $ funref <* ring
   rest <- composition <|> (UFunExpr <$> funref)
   return $ UFunComp f rest
 -}
 
-composition :: Parser UQuery
+composition :: QParser UQuery
 composition = UFunComp <$> funref `sepBy1` ring <?> "function composition"
 
 -- query = { var <- query | query }
 
-bind :: Parser UQuery
+bind :: QParser UQuery
 bind =  do 
   v <- try $ identifier <* bindop
   x <- bindable
   rest <- following
   return (UBind x (UF v rest))
 
-bindop :: Parser String
+bindop :: QParser String
 bindop = symbol "<-"
 
-bindable :: Parser UQuery
+bindable :: QParser UQuery
 bindable = initial <|> union <|> query <|> app
 
-following :: Parser UQuery
-following = (comma *> (bind <|> filter)) <|> (vline *> ret)
+following :: QParser UQuery
+following = do q <-  optionMaybe (comma *> (bind <|> filter))
+               case q of 
+                 Just x  -> return x
+                 Nothing -> fromJust <$> getState                       
 
-filter :: Parser UQuery
+filter :: QParser UQuery
 filter = do
   f <- relation <|> subset <|> element <|> app
   rest <- following
   return (UBind (UGuard f) (UF "()" rest))
 
-vline :: Parser String
+vline :: QParser String
 vline = symbol "|"
 
-ret :: Parser UQuery
+ret :: QParser UQuery
 ret = UReturn <$> (app <|> ref <|> query)
 
-relation :: Parser UQuery
+relation :: QParser UQuery
 relation = do rel <- try $ do 
                        a1 <- relOperand
                        rel <- relop
@@ -148,59 +156,59 @@ relation = do rel <- try $ do
               return $ rel a2
            <?> "relation"
 
-relOperand :: Parser UQuery
+relOperand :: QParser UQuery
 relOperand = app <|> ref <|> numLit <|> stringLit <|> dataConst
 
-stringLit :: Parser UQuery
+stringLit :: QParser UQuery
 stringLit = UStringLit <$> stringLiteral
 
-numLit :: Parser UQuery
+numLit :: QParser UQuery
 numLit = do 
   n <- lexeme decimal
   return $ UNumLit (fromIntegral n)
 
-relop :: Parser Binop
+relop :: QParser Binop
 relop = (eq <|> neq <|> lte <|> lt <|> gte <|> gt <|> regexp) <* spaces
 
-eq :: Parser Binop
+eq :: QParser Binop
 eq = try (symbol "==") `as` Eq
 
-neq :: Parser Binop
+neq :: QParser Binop
 neq = symbol "/=" `as` NEq
 
-lt :: Parser Binop
+lt :: QParser Binop
 lt = symbol "<" `as` Lt
 
-lte :: Parser Binop
+lte :: QParser Binop
 lte = try (symbol "<=") `as` Lte
 
-gt :: Parser Binop
+gt :: QParser Binop
 gt = symbol ">" `as` Gt
 
-gte :: Parser Binop
+gte :: QParser Binop
 gte = try (symbol ">=") `as` Gte
 
-regexp :: Parser Binop
+regexp :: QParser Binop
 regexp = symbol "=~" `as` Regexp
 
-initial :: Parser UQuery
+initial :: QParser UQuery
 initial = modules <|> atModule <|> atFile <|> atFunction <|> atExpression <?> "initial selector"
 
-atModule :: Parser UQuery
-atModule = reserved "atModule" `as` UAtModule
+atModule :: QParser UQuery
+atModule = reserved "atModule" *> return UAtModule
 
-modules :: Parser UQuery
-modules = reserved "modules" `as` UModules
+modules :: QParser UQuery
+modules = reserved "modules" *> return UModules
 
-atFile :: Parser UQuery
-atFile = reserved "atFile" `as` UAtFile
+atFile :: QParser UQuery
+atFile = reserved "atFile" *> return UAtFile
 
-atFunction :: Parser UQuery
-atFunction = reserved "atFunction" `as` UAtFunction
+atFunction :: QParser UQuery
+atFunction = reserved "atFunction" *> return UAtFunction
 
-atExpression :: Parser UQuery
-atExpression = reserved "atExpression" `as` UAtExpr
+atExpression :: QParser UQuery
+atExpression = reserved "atExpression" *> return UAtExpr
          
-as :: Parser a -> b -> Parser b
+as :: QParser a -> b -> QParser b
 as p x = do { _ <- p; return x }
 

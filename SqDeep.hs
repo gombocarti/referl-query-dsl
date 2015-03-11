@@ -4,7 +4,7 @@ module SqDeep where
 import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..))
 import Parser (start)
 import TypeCheck (check)
-import Text.Parsec (parse)
+import Text.Parsec (runParser)
 import Control.Monad.Error (throwError)
 import Data.List (union)
 import Text.Regex.Posix ((=~))
@@ -120,7 +120,7 @@ instance Sq.Named Value where
 run :: String -> Either String Value
 run s = either (throwError . show) 
         (\q -> do { q' ::: _ <- check q []; return $ eval q' [] })
-        (parse start "" s)
+        (runParser start Nothing "" s)
 
 run' :: String -> IO ()
 run' s = case run s of

@@ -3,4 +3,4 @@ import Parser
 import TypeCheck
 import SqDeep
 import qualified Test
-import Text.Parsec (parse)
+import Text.Parsec (parse,runParser)
