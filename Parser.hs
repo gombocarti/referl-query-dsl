@@ -47,8 +47,11 @@ query :: QParser UQuery
 query = braces (do
           r <- ret
           _ <- vline
+          x <- getState
           putState . Just $ r
-          bind)
+          b <- bind
+          putState x
+          return b)
         <?> "query"
 
 aggregate :: QParser UQuery
