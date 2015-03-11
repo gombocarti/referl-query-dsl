@@ -7,61 +7,61 @@ import Control.Exception (catch, SomeException)
 type TestCase = (String, Value)
 
 tests :: [TestCase]
-tests = [ ("{m <- modules, f <- functions m | f}", wrap [a,b,f]) -- q1
+tests = [ ("{f | m <- modules, f <- functions m}", wrap [a,b,f]) -- q1
         -- q2
-        , ("{m <- modules, name m == \"mymod\", f <- functions m, name f == \"f\", p <- parameters f | type p}", Seq [])
+        , ("{type p | m <- modules, name m == \"mymod\", f <- functions m, name f == \"f\", p <- parameters f}", Seq [])
         -- q3
-        , ("{m <- modules, name m == \"m1\", f <- functions m, name f == \"a\" | returns f}", Seq [wrap . freturns $ a])
+        , ("{returns f | m <- modules, name m == \"m1\", f <- functions m, name f == \"a\"}", Seq [wrap . freturns $ a])
         -- q4
-        , ("{m <- modules, f <- functions m, exported f, arity f == 0 | f}", Seq [])
+        , ("{f | m <- modules, f <- functions m, exported f, arity f == 0}", Seq [])
         -- q5
-        , ("{f <- functions atModule , c <- calls f | c}", wrap [b])
+        , ("{c | f <- functions atModule , c <- calls f}", wrap [b])
         -- q6
-        , ("{m <- modules, not (name m =~ \"^test\") | m}", wrap [m1,m2])
+        , ("{m | m <- modules, not (name m =~ \"^test\")}", wrap [m1,m2])
         -- q7
-        , ("{m <- modules, f <- functions m, c <- chainInf calls f | c}", Seq [Chain (Complete [SqDeep.Fun b,SqDeep.Fun a]),Chain (Complete [SqDeep.Fun b]),Chain (Complete [SqDeep.Fun f])])
+        , ("{c | m <- modules, f <- functions m, c <- chainInf calls f}", Seq [Chain (Complete [SqDeep.Fun b,SqDeep.Fun a]),Chain (Complete [SqDeep.Fun b]),Chain (Complete [SqDeep.Fun f])])
         -- q8
-        , ("{m <- modules, name m == \"io\" , f <- functions m, name f == \"format\", r <- references f | r}", Seq [])
+        , ("{r | m <- modules, name m == \"io\" , f <- functions m, name f == \"format\", r <- references f}", Seq [])
         -- q9
-        , ("{o <- origin atExpression | o}", wrap [bodya])
+        , ("{o | o <- origin atExpression}", wrap [bodya])
         -- q9' (j)
-        , ("{r <- references atFunction, o <- origin r | o}", Seq [])
+        , ("{o | r <- references atFunction, o <- origin r}", Seq [])
         -- q10
-        , ("{m <- modules , f <- file m, r <- records f, name r == \"p\", f <- fields r, name f == \"name\", r <- references f | r}", wrap [newrecord]) -- névelfedés (r)!
+        , ("{r | m <- modules , f <- file m, r <- records f, name r == \"p\", f <- fields r, name f == \"name\", r <- references f}", wrap [newrecord]) -- névelfedés (r)!
         -- q11
-        , ("{m <- modules, l <- loc m, l > 400 | m}", Seq [])
+        , ("{m | m <- modules, l <- loc m, l > 400}", Seq [])
         -- q12
-        , ("{m <- modules, f <- functions m, l <- loc f, l < 20 | f}", wrap [a,b,f])
+        , ("{f | m <- modules, f <- functions m, l <- loc f, l < 20}", wrap [a,b,f])
         -- q13
-        , ("{f <- functions atModule, m <- max {e <- expressions f, exprType e == Case | dept e}, m > 2 | f}", Seq [])
+        , ("{f | f <- functions atModule, m <- max {depth e | e <- expressions f, exprType e == Case}, m > 2}", Seq [])
         -- q14
-        , ("max {f <- functions atModule, e <- expressions f, exprType e == Case | depth e}", Seq [])
+        , ("max {depth e | f <- functions atModule, e <- expressions f, exprType e == Case}", Seq [])
         -- q15
-        , ("{m <- modules, f <- functions m, recursivity f == NonTailRecursive | f}", Seq [])
+        , ("{f | m <- modules, f <- functions m, recursivity f == NonTailRecursive}", Seq [])
         -- q16
-        , ("{m <- modules, f <- functions m, name m == name f | f}", Seq [])
+        , ("{f | m <- modules, f <- functions m, name m == name f}", Seq [])
         -- q18
-        , ("{m <- modules, f <- functions m, c <- chainInf (\\g -> [c | c <- calls g, name c == name g ]) f | c}", Seq []) -- ennek nem üres lista az eredménye
+        , ("{c | m <- modules, f <- functions m, c <- chainInf (\\g -> {c | c <- calls g, name c == name g }) f}", Seq []) -- ennek nem üres lista az eredménye
         -- q19
-        , ("{m <- modules, f <- functions m, c <- lfp calls f | c}", wrap [a,b,b,f]) 
+        , ("{c | m <- modules, f <- functions m, c <- lfp calls f}", wrap [a,b,b,f]) 
         -- q20
-        , ("{m <- modules, f <- functions m, c <- iteration 4 calls f | c}", Seq [])
+        , ("{c | m <- modules, f <- functions m, c <- iteration 4 calls f}", Seq [])
         -- q21
-        , ("{m <- modules, f <- functions m, f ∈ calls f | f}", Seq [])
+        , ("{f | m <- modules, f <- functions m, f ∈ calls f}", Seq [])
         -- q22
-        , ("{m <- modules, f <- functions m, not (null (calls f)) | f}", wrap [a])
+        , ("{f | m <- modules, f <- functions m, not (null (calls f))}", wrap [a])
         -- q23
-        , ("{m <- modules, f <- functions m, name f ∈ {c <- calls f | name c} | f}", Seq [])
+        , ("{f | m <- modules, f <- functions m, name f ∈ {name c | c <- calls f}}", Seq [])
         -- q24
-        , ("average {f <- functions atModule, l <- loc f | l}", wrap [2 :: Int])
+        , ("average {l | f <- functions atModule, l <- loc f}", wrap [2 :: Int])
         -- q25
-        , ("{m <- modules, f <- functions m, any_in (calls f) {m <- modules, name m == \"m1\", f <- functions m | f} | f}", wrap [a])
+        , ("{f | m <- modules, f <- functions m, any_in (calls f) {f | m <- modules, name m == \"m1\", f <- functions m}}", wrap [a])
         -- q26
-        , ("{m <- modules, name m == \"m1\", f <- (functions m ∪ {f <- functions m , c <- calls f | c}) | name f}", wrap . map fname $ [a,b])
+        , ("{name f | m <- modules, name m == \"m1\", f <- (functions m ∪ {c | f <- functions m, c <- calls f})}", wrap . map fname $ [a,b])
         -- q27
-        , ("{m1 <- modules, name m1 == \"m1\" , m2 <- modules, name m2 == \"m2\" , f <- (functions m1) ∪ (functions m2) | f}", wrap [a,b,f])
+        , ("{f | m1 <- modules, name m1 == \"m1\" , m2 <- modules, name m2 == \"m2\" , f <- (functions m1) ∪ (functions m2)}", wrap [a,b,f])
         -- q28
-        , ("{m <- modules, f <- file m | path f}", wrap . map path . concatMap mfile $ [m1,m2])
+        , ("{path f | m <- modules, f <- file m}", wrap . map path . concatMap mfile $ [m1,m2])
         ]
 
 check :: [TestCase] -> IO ()
