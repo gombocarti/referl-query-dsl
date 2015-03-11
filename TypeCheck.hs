@@ -4,6 +4,7 @@ import Data.Maybe (isJust)
 import Control.Monad.Error (throwError,catchError)
 import Control.Monad (foldM)
 import Control.Applicative ((<$>))
+import Text.Read (readMaybe)
 import Text.Parsec (parse)
 import Text.Parsec.String (Parser)
 import Types
@@ -35,9 +36,12 @@ check (UVarExpr v) e = do
 check (URef name) e | knownFun name = 
                         do  (f,t) <- getFunType name
                             return $ UFunRef f ::: t
-                    | otherwise = 
-                        do t <- getVar e name
-                           return $ UVarExpr name ::: t
+                    | otherwise =
+                        case readMaybe name of 
+                          Just x -> return $ UExprTypeLit x ::: ExprType
+                          Nothing -> do
+                            t <- getVar e name
+                            return $ UVarExpr name ::: t
 check UModules _env = return $ UModules ::: List Mod
 check UFiles _env = return $ UFiles ::: List File
 check UAtFile _env = return $ UAtFile ::: File

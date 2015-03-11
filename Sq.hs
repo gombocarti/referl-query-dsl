@@ -248,7 +248,7 @@ data ExprType
     | Receive   
     | Try          -- ^ try ... end
     | BlockExpr    -- ^ begin ... end
-      deriving (Show,Eq)
+      deriving (Show,Eq,Read)
 
 filename :: DbFile -> System.FilePath.FilePath
 filename = System.FilePath.takeFileName . fpath

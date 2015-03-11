@@ -34,7 +34,17 @@ decimal    = T.decimal lexer
 parens     = T.parens lexer
 
 query :: Parser UQuery
-query = (braces bind) <?> "query"
+query = braces bind <?> "query"
+
+{-
+query :: Parser UQuery
+query = braces (do
+          r <- ret
+          vline
+          b <- bind
+          return $ UBind b (UF "()" r))
+        <?> "query"
+-}
 
 aggregate :: Parser UQuery
 aggregate = do

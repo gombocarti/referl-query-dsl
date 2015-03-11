@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs #-}
 module Types where
 
-import qualified Sq (DbModule, DbFunction, Named)
+import qualified Sq (DbModule, DbFunction, Named, ExprType)
 
 -- |Identifiers.
 type Id = String
@@ -38,6 +38,7 @@ data UQuery
     | URef Id
     | UStringLit String
     | UNumLit Int
+    | UExprTypeLit Sq.ExprType
     | UModules
     | UFiles
     | UAtFile

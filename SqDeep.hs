@@ -150,6 +150,7 @@ eval UAtExpr _env = wrap Sq.atExpression
 eval (UReturn e) env = Seq [eval e env]
 eval (UStringLit s) _env = wrap s
 eval (UNumLit i) _env = wrap i
+eval (UExprTypeLit t) _env = wrap t
 eval (URelation rel p1 p2) env = wrap $ evalRel p1' rel p2'
     where p1' = eval p1 env
           p2' = eval p2 env
@@ -201,7 +202,7 @@ evalApp UFileName [File f] = wrap . Sq.filename $ f
 evalApp UTypeOf [arg] = case arg of 
                           FunParam p -> wrap . Sq.fptype $ p
                           RecField f -> wrap . Sq.fieldType $ f
-                          Expr e -> wrap . Sq.etype $ e
+evalApp UExprType [Expr e] = wrap . Sq.etype $ e
 evalApp UReturns [Fun f] = wrap . Sq.returns $ f
 evalApp UOrigin [Expr expr] = wrap . Sq.origin $ expr
 evalApp UFields [Rec r] = wrap . Sq.rfields $ r
