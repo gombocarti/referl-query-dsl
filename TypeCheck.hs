@@ -133,49 +133,52 @@ tooFewParams f expected actual = throwError $ "too few parameters: " ++ f ++ " (
 type ErrMsg = String
 
 knownFun :: Id -> Bool
-knownFun name = isJust . funtype $ name
+knownFun name = isJust $ lookup name funtypes
 
 getFunType :: Id -> Either ErrMsg (UFun, Typ)
-getFunType f = maybe (throwError $ "unknown function: " ++ f) return (funtype f)
+getFunType f = case lookup f funtypes of
+                 Just t  -> return t
+                 Nothing -> throwError $ "unknown function: " ++ f
 
 -- |Associates function name with ast node and function which checks argument types.
-funtype :: Id -> Maybe (UFun, Typ)
-funtype "functions"   = Just (UFunctions, Mod :->: List Fun)
-funtype "name"        = Just (UName, Named A :=>: A :->: String)
-funtype "arity"       = Just (UArity, Fun :->: Int)
-funtype "loc"         = Just (ULoc, MultiLine A :=>: A :->: List Int)
-funtype "null"        = Just (UNull, List A :->: Bool)
-funtype "calls"       = Just (UCalls, Fun :->: List Fun)
-funtype "path"        = Just (UPath, File :->: FilePath)
-funtype "directory"   = Just (UDir, File :->: FilePath)
-funtype "filename"    = Just (UFileName, File :->: FilePath)
-funtype "file"        = Just (UFile, Mod :->: List File)
-funtype "records"     = Just (URecords, File :->: List Record)
-funtype "exported"    = Just (UExported, Fun :->: Bool)
-funtype "recursivity" = Just (URecursivity, Fun :->: FunRecursivity)
-funtype "references"  = Just (UReferences, Referencable A :=>: A :->: List Expr)
-funtype "returns"     = Just (UReturns, Fun :->: List Type)
-funtype "parameters"  = Just (UParameters, Fun :->: List FunParam)
-funtype "type"        = Just (UTypeOf, Typeable A :=>: A :->: Type)
-funtype "exprType"    = Just (UExprType, Expr :->: ExprType)
-funtype "expressions" = Just (UExpressions, MultiExpression A :=>: A :->: List Expr)
-funtype "not"         = Just (UNot, Bool :->: Bool)
-funtype "∪"           = Just (UUnion, List A :->: List A :->: List A)
-funtype "∈"           = Just (UElem, A :->: List A :->: Bool)
-funtype "⊆"           = Just (USubset, List A :->: List A :->: Bool)
-funtype "any_in"      = Just (UAnyIn, List A :->: List A :->: Bool)
-funtype "origin"      = Just (UOrigin, Expr :->: List Expr)
-funtype "reach"       = Just (UReach, Expr :->: List Expr)
-funtype "fields"      = Just (UFields, Record :->: List RecordField)
-funtype "closureN"    = Just (UClosureN, Int :->: (A :->: List A) :->: A :->: List A)
-funtype "lfp"         = Just (ULfp, (A :->: List A) :->: A :->: List A)
-funtype "iteration"   = Just (UIteration, Int :->: (A :->: List A) :->: A :->: List A)
-funtype "chainN"      = Just (UChainN, Int :->: (A :->: List A) :->: A :->: List (Chain A))
-funtype "chainInf"    = Just (UChainInf, (A :->: List A) :->: A :->: List (Chain A)) 
-funtype "max"         = Just (UMax, Ord A :=>: List A :->: List A)
-funtype "min"         = Just (UMin, Ord A :=>: List A :->: List A)
-funtype "average"     = Just (UAverage, List Int :->: List Int)
-funtype _             = Nothing
+funtypes :: [(Id, (UFun, Typ))]
+funtypes = 
+    [ ("functions", (UFunctions, Mod :->: List Fun))
+    , ("name", (UName, Named A :=>: A :->: String))
+    , ("arity", (UArity, Fun :->: Int))
+    , ("loc", (ULoc, MultiLine A :=>: A :->: List Int))
+    , ("null", (UNull, List A :->: Bool))
+    , ("calls", (UCalls, Fun :->: List Fun))
+    , ("path",  (UPath, File :->: FilePath))
+    , ("directory",  (UDir, File :->: FilePath))
+    , ("filename",  (UFileName, File :->: FilePath))
+    , ("file",  (UFile, Mod :->: List File))
+    , ("records",  (URecords, File :->: List Record))
+    , ("exported",  (UExported, Fun :->: Bool))
+    , ("recursivity",  (URecursivity, Fun :->: FunRecursivity))
+    , ("references",  (UReferences, Referencable A :=>: A :->: List Expr))
+    , ("returns",  (UReturns, Fun :->: List Type))
+    , ("parameters",  (UParameters, Fun :->: List FunParam))
+    , ("type",  (UTypeOf, Typeable A :=>: A :->: Type))
+    , ("exprType",  (UExprType, Expr :->: ExprType))
+    , ("expressions",  (UExpressions, MultiExpression A :=>: A :->: List Expr))
+    , ("not",  (UNot, Bool :->: Bool))
+    , ("∪", (UUnion, List A :->: List A :->: List A))
+    , ("∈", (UElem, A :->: List A :->: Bool))
+    , ("⊆", (USubset, List A :->: List A :->: Bool))
+    , ("any_in",  (UAnyIn, List A :->: List A :->: Bool))
+    , ("origin",  (UOrigin, Expr :->: List Expr))
+    , ("reach",  (UReach, Expr :->: List Expr))
+    , ("fields",  (UFields, Record :->: List RecordField))
+    , ("closureN",  (UClosureN, Int :->: (A :->: List A) :->: A :->: List A))
+    , ("lfp",  (ULfp, (A :->: List A) :->: A :->: List A))
+    , ("iteration",  (UIteration, Int :->: (A :->: List A) :->: A :->: List A))
+    , ("chainN",  (UChainN, Int :->: (A :->: List A) :->: A :->: List (Chain A)))
+    , ("chainInf",  (UChainInf, (A :->: List A) :->: A :->: List (Chain A)) )
+    , ("max",  (UMax, Ord A :=>: List A :->: List A))
+    , ("min",  (UMin, Ord A :=>: List A :->: List A))
+    , ("average",  (UAverage, List Int :->: List Int))
+    ]
 
 relationType :: Binop -> Typ
 relationType Regexp = String :->: String :->: Bool
