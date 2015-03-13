@@ -41,7 +41,7 @@ tests = [ ("{f | m <- modules, f <- functions m}", wrap [a,b,f]) -- q1
         -- q16
         , ("{f | m <- modules, f <- functions m, name m == name f}", Seq [])
         -- q18
-        , ("{c | m <- modules, f <- functions m, c <- chainInf (\\g -> {c | c <- calls g, name c == name g }) f}", Seq []) -- ennek nem üres lista az eredménye
+        , ("{c | m <- modules, f <- functions m, c <- chainInf calls f, count (distinct c) == 1}", Seq [Chain (Sq.Complete [SqDeep.Fun Sq.b]),Chain (Complete [SqDeep.Fun Sq.f])])
         -- q19
         , ("{c | m <- modules, f <- functions m, c <- lfp calls f}", wrap [a,b,b,f]) 
         -- q20

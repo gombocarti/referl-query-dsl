@@ -92,6 +92,8 @@ data UFun
     | UMax
     | UMin
     | UAverage
+    | ULength
+    | UDistinct
       deriving (Show, Eq)
 
 -- |Untyped function.

@@ -6,7 +6,8 @@ import Parser (start)
 import TypeCheck (check)
 import Text.Parsec (runParser)
 import Control.Monad.Error (throwError)
-import Data.List (union)
+import Data.Functor ((<$>))
+import Data.List (union,nub)
 import Text.Regex.Posix ((=~))
 
 import qualified Sq
@@ -225,8 +226,20 @@ evalApp UExpressions [arg] =
 evalApp UMax [Seq xs] = Seq . Sq.max $ xs
 evalApp UMin [Seq xs] = Seq . Sq.min $ xs
 evalApp UAverage [xs] = wrap . Sq.average . unwrap $ xs
+evalApp ULength [Chain c] = Int . length . getChain $ c
+evalApp UDistinct [Chain c] = Chain $ fChain nub c
+
+fChain :: ([a] -> [b]) -> Sq.Chain a -> Sq.Chain b
+fChain f (Sq.Incomplete xs) = Sq.Incomplete $ f xs
+fChain f (Sq.Complete xs)   = Sq.Complete $ f xs
+fChain f (Sq.Recursive xs)  = Sq.Recursive $ f xs
+
+getChain :: Sq.Chain a -> [a]
+getChain (Sq.Incomplete xs) = xs
+getChain (Sq.Complete xs)   = xs
+getChain (Sq.Recursive xs)  = xs
 
 readVar :: Id -> Env -> Value
 readVar v env = case lookup v env of
-                  Just x -> x
+                  Just x  -> x
                   Nothing -> error $ "undefined variable: " ++ v

@@ -178,6 +178,8 @@ funtypes =
     , ("max",  (UMax, Ord A :=>: List A :->: List A))
     , ("min",  (UMin, Ord A :=>: List A :->: List A))
     , ("average",  (UAverage, List Int :->: List Int))
+    , ("count", (ULength, Chain A :->: Int))
+    , ("distinct", (UDistinct, Chain A :->: Chain A))
     ]
 
 relationType :: Binop -> Typ
@@ -187,7 +189,7 @@ relationType _      = A :->: A :->: Bool
 -- |Decides whether the particular type have name function.
 named :: Typ -> Either String ()
 named t | t `elem` [File,Mod,Fun,Record,RecordField] = return ()
-        | otherwise = throwError $ "dont have name: " ++ show t
+        | otherwise = throwError $ "doesn't have name: " ++ show t
 
 -- |Decides whether the particular type is referencable.
 referencable :: Typ -> Either String ()
