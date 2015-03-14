@@ -194,13 +194,16 @@ regexp :: QParser Binop
 regexp = symbol "=~" `as` Regexp
 
 initial :: QParser UQuery
-initial = modules <|> atModule <|> atFile <|> atFunction <|> atExpression <?> "initial selector"
+initial = modules <|> files <|> atModule <|> atFile <|> atFunction <|> atExpression <?> "initial selector"
 
 atModule :: QParser UQuery
 atModule = reserved "atModule" *> return UAtModule
 
 modules :: QParser UQuery
 modules = reserved "modules" *> return UModules
+
+files :: QParser UQuery
+files = reserved "files" *> return UFiles
 
 atFile :: QParser UQuery
 atFile = reserved "atFile" *> return UAtFile

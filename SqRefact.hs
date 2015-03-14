@@ -7,6 +7,7 @@ import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
 import Control.Monad (sequence)
 import Data.Functor ((<$>))
+import System.FilePath (takeBaseName,takeFileName)
 
 import qualified Sq
 
@@ -35,9 +36,11 @@ instance Ord Value where
     (String s1) <= (String s2) = s1 <= s2
     (Bool a) <= (Bool b) = a <= b
 
+file_lib = "reflib_file"
 module_lib = "reflib_module"
 function_lib = "reflib_function"
 query_lib = "reflib_query"
+metrics = "refusr_metrics"
 
 type ErlModule = String
 type ErlFunction = String
@@ -50,11 +53,11 @@ data Database = Database
     , call :: ErlModule -> ErlFunction -> [ErlType] -> IO ErlType
     }
               
-initErl :: IO (Database,Self)
-initErl = do 
-  self <- createSelf "haskell@localhost"
+initErl :: String -> IO Database
+initErl name = do 
+  self <- createSelf name
   mbox <- createMBox self
-  return $ (database mbox,self)
+  return $ database mbox
 
 referl = "refactorerl"
 
@@ -94,26 +97,29 @@ eval (UAppExpr f args) env = do
   args' <- mapM (flip eval env) args
   evalApp f args'
 eval UModules _env = do 
-  p <- path UModules
-  ms <- queryDb p
+  ms <- queryDb UModules
   case ms of
     ErlNull    -> return $ Seq []
     ErlList xs -> return $ Seq . map Mod $ xs
 eval UFiles _env = do
-  p <- path UFiles
-  fs <-queryDb p
+  fs <-queryDb UFiles
   case fs of
     ErlNull    -> return $ Seq []
     ErlList xs -> return $ Seq . map File $ xs
+{-
 eval UAtFunction _env = do
-  p <- path UAtFunction
-  f <- queryDb p
+  f <- queryDb UAtFunction
   case f of
     ErlNull    -> return $ Seq []
     ErlTuple _ -> return $ Seq [Fun f]
-eval UAtFile _env = wrap Sq.atFile
+eval UAtFile _env = do
+  f <- queryDb UAtFile
+  case f of
+    ErlNull    -> return $ Seq []
+    ErlTuple _ -> return $ Seq [Fun f]  
 eval UAtModule _env = wrap Sq.atModule
 eval UAtExpr _env = wrap Sq.atExpression
+-}
 eval (UReturn e) env = do 
   x <- eval e env
   return $ Seq [x]
@@ -134,11 +140,14 @@ eval (UGuard pred) env = do
 
 path :: UQuery -> Query GraphPath
 path UModules = callDb module_lib "all" []
+path UFiles   = callDb file_lib "all" []
 
 -- path UModules = return . GPath $ ErlList [ErlTuple [ErlAtom "module",ErlTuple [ErlAtom "name", ErlAtom "/=", ErlList []]]]
 
 --pathFun :: UFun -> Query GraphPath
 pathFun UFunctions = callDb module_lib "locals" []
+pathFun UCalls     = callDb function_lib "funcalls" []
+pathFun UFile      = callDb module_lib "file" []
 
 {-
 pathFun UFunctions = 
@@ -158,16 +167,22 @@ callDb m f args = do db <- ask
                      p <- liftIO $ call db m f args
                      return $ GPath p
 
-queryDb :: GraphPath -> Query ErlType
-queryDb p = do db <- ask
+queryDb :: UQuery -> Query ErlType
+queryDb q = do p <- path q
+               db <- ask
                liftIO $ runQuery db p
 
-queryDb1 :: ErlType -> GraphPath -> Query ErlType
-queryDb1 x p = do db <- ask
-                  liftIO $ runQuery1 db x p
+queryDb1 :: ErlType -> UFun -> (ErlType -> Value) -> Query Value
+queryDb1 x f g = do 
+  p <- pathFun f
+  db <- ask
+  y <- liftIO $ runQuery1 db x p
+  wrap g y
 
-
-wrap = undefined
+wrap :: (ErlType -> Value) -> ErlType -> Query Value
+wrap _f ErlNull = return . Seq $ []
+wrap f (ErlList xs) = return . Seq . map f $ xs
+wrap f x = return . f $ x
 
 evalRel :: Value -> Binop -> Value -> Bool
 evalRel a Eq  b = a == b
@@ -198,31 +213,31 @@ readVar v env = case lookup v env of
                   Nothing -> error $ "undefined variable: " ++ v
 
 evalApp :: UFun -> [Value] -> Query Value
-{-
-evalApp UName [arg] = wrap . Sq.name $ arg
-evalApp UArity [Fun f] = wrap . Sq.arity $ f
-evalApp ULoc [arg] = case arg of
-                       Fun f -> wrap . Sq.loc $ f
-                       File f -> wrap . Sq.loc $ f
-                       Mod m -> wrap . Sq.loc $ m
-evalApp UNot [Bool pred] = wrap $ not pred
-evalApp UNull [Seq xs] = wrap $ null xs
-evalApp UElem [a,Seq bs] = wrap $ a `elem` bs
-evalApp USubset [Seq as,Seq bs] = wrap $ as `Sq.all_in` bs
-evalApp UAnyIn [Seq as,Seq bs] = wrap $ as `Sq.any_in` bs
-evalApp UUnion [Seq as,Seq bs] = Seq $ as `union` bs
-evalApp UCalls [Fun f] = wrap $  Sq.fcalls f
--}
-evalApp UFunctions [Mod m] = do p <- pathFun UFunctions
-                                fs <- queryDb1 m p
-                                case fs of
-                                  ErlNull    -> return $ Seq []
-                                  ErlList xs -> return . Seq . map Fun $ xs
-                                
+evalApp UName [arg] = 
+    case arg of
+      Fun f  -> (String . fromErlang) <$> callDb' function_lib "name" [f]
+      Mod m  -> queryDb1 m UModName (String . fromErlang)
+      File f -> queryDb1 f UFileName (String . fromErlang)
+evalApp UArity [Fun f] = (Int . fromErlang) <$> callDb' function_lib "arity" [f]
+evalApp ULoc [arg] = do
+    loc <- case arg of
+             Fun f -> callDb' metrics "metric" [ErlTuple [ErlAtom "line_of_code",ErlAtom "function",f]]
+             File f -> callDb' metrics "metric" [ErlTuple [ErlAtom "line_of_code",ErlAtom "file",f]]
+    return . Int . fromErlang $ loc
+evalApp UNot [Bool pred] = return . Bool . not $ pred
+evalApp UNull [Seq xs] = return . Bool . null $ xs
+evalApp UElem [a,Seq bs] = return . Bool $ a `elem` bs
+evalApp USubset [Seq as,Seq bs] = return . Bool $ as `Sq.all_in` bs
+evalApp UAnyIn [Seq as,Seq bs] = return . Bool $ as `Sq.any_in` bs
+evalApp UUnion [Seq as,Seq bs] = return . Seq $ as `union` bs
+evalApp UCalls [Fun f] = queryDb1 f UCalls Fun
+evalApp UFunctions [Mod m] = queryDb1 m UFunctions Fun
 {-
 evalApp URecords [File f] = wrap . Sq.frecords $ f
 evalApp UExported [Fun f] = wrap . Sq.fexported $ f
-evalApp UFile [Mod m] = wrap . Sq.mfile $ m
+-}
+evalApp UFile [Mod m] = queryDb1 m UFile File
+{-
 evalApp UPath [File f] = wrap . Sq.fpath $ f
 evalApp UDir [File f] = wrap . Sq.dir $ f
 evalApp UFileName [File f] = wrap . Sq.filename $ f
@@ -251,6 +266,11 @@ evalApp UDistinct [Chain c] = Chain $ fChain nub c
 -}
 
 showValue :: Value -> Query String
-showValue (Mod m) = fromErlang <$> callDb' module_lib "name" [m]
-showValue (Fun f) = fromErlang <$> callDb' function_lib "name" [f]
-showValue (Seq xs) = unlines <$> mapM showValue xs
+showValue (File f)   = do
+  path <-  fromErlang <$> callDb' file_lib "path" [f]
+  return . takeFileName $ path  
+showValue (Mod m)    = fromErlang <$> callDb' module_lib "name" [m]
+showValue (Fun f)    = fromErlang <$> callDb' function_lib "name" [f]
+showValue (Int n)    = return . show $ n
+showValue (String s) = return s
+showValue (Seq xs)   = unlines <$> mapM showValue xs

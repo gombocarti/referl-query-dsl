@@ -62,8 +62,12 @@ data UFun
     | URecords   -- ^ Records defined in a file.
     | UExports   -- ^ Exported functions of a module.
     | UImports   -- ^ Imported functions of a module.
-    | ULoc       -- ^ Line of code.
+    | ULoc       -- ^ Lines of code.
+    | UFunLoc
+    | UFileLoc
     | UName      
+    | UFunName
+    | UModName
     | UArity
     | UCalls
     | UNull      -- ^ Prelude.null.

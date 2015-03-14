@@ -11,7 +11,7 @@ import System.Environment (getArgs)
 
 run :: String -> IO ()
 run s = case runchk s start [] of
-          Right (q ::: _) -> do (db,_) <- initErl
+          Right (q ::: _) -> do db <- initErl "haskell@localhost"
                                 x <- runReaderT (eval q []) db
                                 s <- runReaderT (showValue x) db
                                 putStrLn s
