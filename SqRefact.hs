@@ -19,8 +19,8 @@ data Value
     | FunParam ErlType
     | Rec ErlType
     | RecField ErlType
-    | ExprType ErlType
-    | FunRecursivity ErlType
+    | ExprType Sq.ExprType
+    | FunRecursivity Sq.DbFunctionType
     | String String
     | Int Int
     | Bool Bool
@@ -73,7 +73,7 @@ type Query a = ReaderT Database IO a
 eval :: UQuery -> Env -> Query Value
 eval (UBind m (UF x body)) env = do 
   Seq as <-  eval m env
-  xs <- sequence [eval body ((x,a):env) | a <- as]
+  xs <- forM as (\a -> eval body ((x,a):env))
   return $ concatValue xs
 eval (UVarExpr v) env = return $ readVar v env
 {-
@@ -93,40 +93,61 @@ eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 eval (UAppExpr f args) env = do
   args' <- mapM (flip eval env) args
   evalApp f args'
-eval UModules _env = do p <- path UModules
-                        ms <- queryDb p
-                        case ms of
-                          ErlNull    -> return $ Seq []
-                          ErlList xs -> return $ Seq . map Mod $ xs
-{-
-eval UFiles _env = wrap Sq.files
-eval UAtFunction _env = wrap Sq.atFunction
+eval UModules _env = do 
+  p <- path UModules
+  ms <- queryDb p
+  case ms of
+    ErlNull    -> return $ Seq []
+    ErlList xs -> return $ Seq . map Mod $ xs
+eval UFiles _env = do
+  p <- path UFiles
+  fs <-queryDb p
+  case fs of
+    ErlNull    -> return $ Seq []
+    ErlList xs -> return $ Seq . map File $ xs
+eval UAtFunction _env = do
+  p <- path UAtFunction
+  f <- queryDb p
+  case f of
+    ErlNull    -> return $ Seq []
+    ErlTuple _ -> return $ Seq [Fun f]
 eval UAtFile _env = wrap Sq.atFile
 eval UAtModule _env = wrap Sq.atModule
 eval UAtExpr _env = wrap Sq.atExpression
--}
 eval (UReturn e) env = do 
   x <- eval e env
   return $ Seq [x]
-{-
-eval (UStringLit s) _env = wrap s
-eval (UNumLit i) _env = wrap i
-eval (UExprTypeLit t) _env = wrap t
-eval (UFunRecurLit fr) _env = wrap fr
-eval (URelation rel p1 p2) env = wrap $ evalRel p1' rel p2'
-    where p1' = eval p1 env
-          p2' = eval p2 env
-eval (UGuard pred) env = if p then Seq [Unit] else Seq []
-    where Bool p = eval pred env
+eval (UStringLit s) _env = return $ String s
+eval (UNumLit i) _env = return $ Int i
+eval (UExprTypeLit t) _env = return $ ExprType t
+eval (UFunRecurLit fr) _env = return $ FunRecursivity fr
+eval (URelation rel p1 p2) env = do 
+  p1' <- eval p1 env
+  p2' <- eval p2 env
+  return . Bool $ evalRel p1' rel p2'       
+eval (UGuard pred) env = do
+  Bool p <- eval pred env
+  if p 
+  then return $ Seq [Unit]
+  else return $ Seq []
 
--}
 
 path :: UQuery -> Query GraphPath
 path UModules = callDb module_lib "all" []
 
-pathFun :: UFun -> Query GraphPath
+-- path UModules = return . GPath $ ErlList [ErlTuple [ErlAtom "module",ErlTuple [ErlAtom "name", ErlAtom "/=", ErlList []]]]
+
+--pathFun :: UFun -> Query GraphPath
 pathFun UFunctions = callDb module_lib "locals" []
 
+{-
+pathFun UFunctions = 
+    return . GPath $ ErlList [ErlTuple 
+                              [ErlAtom "func",
+                               ErlTuple [ErlTuple [ErlAtom "opaque",ErlAtom "==",ErlAtom "false"],
+                                         ErlAtom "and",
+                                         ErlTuple [ErlAtom "type",ErlAtom "==",ErlAtom "regular"]]]]
+-}
 
 callDb' :: ErlModule -> ErlFunction -> [ErlType] -> Query ErlType
 callDb' m f args = do db <- ask
