@@ -5,14 +5,7 @@ import Control.Monad.Error (throwError,catchError)
 import Control.Monad (foldM)
 import Control.Applicative ((<$>))
 import Text.Read (readMaybe)
-import Text.Parsec (parse)
-import Text.Parsec.String (Parser)
 import Types
-
-runchk :: String -> Parser UQuery -> TEnv ->  Either String TUQuery
-runchk s parser env = case parse parser "" s of
-                        Right x -> check x env
-                        Left err -> throwError . show $ err
 
 getVar :: TEnv -> Id -> Either String Typ
 getVar env v = case lookup v env of
