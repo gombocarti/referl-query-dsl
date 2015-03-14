@@ -248,11 +248,16 @@ evalApp UFileName f = do
   String path <- evalApp UPath f
   return . String . takeFileName $ path
 {-
-evalApp UTypeOf [arg] = case arg of 
-                          FunParam p -> wrap . Sq.fptype $ p
-                          RecField f -> wrap . Sq.fieldType $ f
-evalApp UExprType [Expr e] = wrap . Sq.etype $ e
-evalApp URecursivity [Fun f] = wrap . Sq.frecursive $ f
+evalApp UTypeOf [arg] = 
+    case arg of 
+      FunParam p -> callDb' 
+      RecField f -> queryDb1 f URecFieldTypeOf Type
+-}
+-- evalApp UExprType [Expr e] = queryDb1 e UExprType ExprType
+
+-- evalApp URecursivity [Fun f] = wrap . Sq.frecursive $ f
+
+{-
 evalApp UReturns [Fun f] = wrap . Sq.returns $ f
 evalApp UOrigin [Expr expr] = wrap . Sq.origin $ expr
 evalApp UFields [Rec r] = wrap . Sq.rfields $ r
@@ -271,6 +276,7 @@ evalApp UAverage [xs] = wrap . Sq.average . unwrap $ xs
 evalApp ULength [Chain c] = Int . length . getChain $ c
 evalApp UDistinct [Chain c] = Chain $ fChain nub c
 -}
+
 getChain = undefined
 fChain = undefined
 

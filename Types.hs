@@ -86,6 +86,8 @@ data UFun
     | UReach
     | UFields      -- ^ Fields of a record.
     | UTypeOf
+    | UFunParamTypeOf
+    | URecFieldTypeOf
     | UExprType
     | UExpressions
     | UChainN
