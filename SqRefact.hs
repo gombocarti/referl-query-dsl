@@ -7,7 +7,7 @@ import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
 import Control.Monad (sequence)
 import Data.Functor ((<$>))
-import System.FilePath (takeBaseName,takeFileName)
+import System.FilePath (takeFileName,takeDirectory)
 
 import qualified Sq
 
@@ -185,6 +185,8 @@ wrap _f ErlNull = return . Seq $ []
 wrap f (ErlList xs) = return . Seq . map f $ xs
 wrap f x = return . f $ x
 
+unwrap = undefined
+
 evalRel :: Value -> Binop -> Value -> Bool
 evalRel a Eq  b = a == b
 evalRel a NEq b = a /= b
@@ -238,10 +240,14 @@ evalApp UExported [Fun f] = do
   exported <-fromErlang <$> callDb' function_lib "is_exported" [f]
   return . Bool $ exported
 evalApp UFile [Mod m] = queryDb1 m UFile File
+evalApp UPath [File f] = (String . fromErlang) <$> callDb' file_lib "path" [f]
+evalApp UDir f = do
+  String path <- evalApp UPath f
+  return . String . takeDirectory $ path
+evalApp UFileName f = do
+  String path <- evalApp UPath f
+  return . String . takeFileName $ path
 {-
-evalApp UPath [File f] = wrap . Sq.fpath $ f
-evalApp UDir [File f] = wrap . Sq.dir $ f
-evalApp UFileName [File f] = wrap . Sq.filename $ f
 evalApp UTypeOf [arg] = case arg of 
                           FunParam p -> wrap . Sq.fptype $ p
                           RecField f -> wrap . Sq.fieldType $ f
@@ -265,6 +271,8 @@ evalApp UAverage [xs] = wrap . Sq.average . unwrap $ xs
 evalApp ULength [Chain c] = Int . length . getChain $ c
 evalApp UDistinct [Chain c] = Chain $ fChain nub c
 -}
+getChain = undefined
+fChain = undefined
 
 showValue :: Value -> Query String
 showValue (File f)   = do
