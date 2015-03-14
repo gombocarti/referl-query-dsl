@@ -148,6 +148,7 @@ path UFiles   = callDb file_lib "all" []
 pathFun UFunctions = callDb module_lib "locals" []
 pathFun UCalls     = callDb function_lib "funcalls" []
 pathFun UFile      = callDb module_lib "file" []
+pathFun URecords   = callDb file_lib "records" []
 
 {-
 pathFun UFunctions = 
@@ -232,10 +233,10 @@ evalApp UAnyIn [Seq as,Seq bs] = return . Bool $ as `Sq.any_in` bs
 evalApp UUnion [Seq as,Seq bs] = return . Seq $ as `union` bs
 evalApp UCalls [Fun f] = queryDb1 f UCalls Fun
 evalApp UFunctions [Mod m] = queryDb1 m UFunctions Fun
-{-
-evalApp URecords [File f] = wrap . Sq.frecords $ f
-evalApp UExported [Fun f] = wrap . Sq.fexported $ f
--}
+evalApp URecords [File f] = queryDb1 f URecords Rec
+evalApp UExported [Fun f] = do
+  exported <-fromErlang <$> callDb' function_lib "is_exported" [f]
+  return . Bool $ exported
 evalApp UFile [Mod m] = queryDb1 m UFile File
 {-
 evalApp UPath [File f] = wrap . Sq.fpath $ f
@@ -273,4 +274,5 @@ showValue (Mod m)    = fromErlang <$> callDb' module_lib "name" [m]
 showValue (Fun f)    = fromErlang <$> callDb' function_lib "name" [f]
 showValue (Int n)    = return . show $ n
 showValue (String s) = return s
+showValue (Bool b)   = return . show $ b
 showValue (Seq xs)   = unlines <$> mapM showValue xs
