@@ -90,6 +90,8 @@ data UFun
     | URecFieldTypeOf
     | UExprType
     | UExpressions
+    | UFunExpressions
+    | USubExpressions
     | UChainN
     | UChainInf
     | UClosureN

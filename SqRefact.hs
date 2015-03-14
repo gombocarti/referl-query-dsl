@@ -8,6 +8,7 @@ import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
 import Data.Functor ((<$>))
 import System.FilePath (takeFileName,takeDirectory)
+import Data.String.Utils (strip)
 
 import qualified Sq
 
@@ -17,6 +18,7 @@ data Value
     | Fun ErlType
     | Expr ErlType
     | Type ErlType
+    | TypeExpr ErlType
     | FunParam ErlType
     | Rec ErlType
     | RecField ErlType
@@ -39,13 +41,23 @@ instance Ord Value where
 file_lib = "reflib_file"
 module_lib = "reflib_module"
 function_lib = "reflib_function"
+lib_record = "reflib_record"
+lib_spec   = "reflib_spec"
+lib_type   = "reflib_type"
+lib_typeExp = "reflib_typexp"
+lib_clause = "reflib_clause"
+lib_form  = "reflib_form"
+dataflow  = "refanal_dataflow"
 query_lib = "reflib_query"
 metrics = "refusr_metrics"
+syntax  = "refcore_syntax"
 
 type ErlModule = String
 type ErlFunction = String
 
-newtype GraphPath = GPath ErlType deriving Show
+data GraphPath = GPath ErlType
+               | GSeq [GraphPath]
+                 deriving Show
 
 data Database = Database 
     { call :: ErlModule -> ErlFunction -> [ErlType] -> IO ErlType }
@@ -128,11 +140,21 @@ gpath UFiles   = getPath file_lib "all"
 
 -- path UModules = return . GPath $ ErlList [ErlTuple [ErlAtom "module",ErlTuple [ErlAtom "name", ErlAtom "/=", ErlList []]]]
 
---pathFun :: UFun -> Query GraphPath
+pathFun :: UFun -> Query GraphPath
 pathFun URecords   = getPath file_lib "records"
 pathFun UFunctions = getPath module_lib "locals"
 pathFun UFile      = getPath module_lib "file"
 pathFun UCalls     = getPath function_lib "funcalls"
+pathFun UFields    = getPath lib_record "fields"
+pathFun UReturns   = 
+    GSeq <$> sequence [ getPath function_lib "spec"
+                      , getPath lib_spec "returntypes"
+                      ]
+pathFun UFunExpressions = 
+    GSeq <$> sequence [ getPath function_lib "definition"
+                      , getPath lib_form "clauses"
+                      , getPath lib_clause "exprs"
+                      ]
 
 {-
 pathFun UFunctions = 
@@ -160,8 +182,13 @@ queryDb f q = do
 
 queryDb1 :: (ErlType -> Value) -> UFun -> ErlType -> Query Value
 queryDb1 f g x = do 
-  GPath p <- pathFun g
-  y <- callDb query_lib "exec" [x,p]
+  p <- pathFun g
+  y <- case p of 
+         GPath path  -> callDb query_lib "exec" [x,path]
+         GSeq pathes -> do
+                   let pathes' = [p' | GPath p' <- pathes]
+                   p' <- callDb query_lib "seq" [ErlList pathes']
+                   callDb query_lib "exec" [x,p']
   wrap f y
 
 propertyDb :: Erlang a => (a -> Value) -> ErlModule -> ErlFunction -> ErlType -> Query Value
@@ -207,9 +234,13 @@ readVar v env = case lookup v env of
 evalApp :: UFun -> [Value] -> Query Value
 evalApp UName [arg] = 
     case arg of
-      Fun f  -> propertyDb String function_lib "name" f
-      Mod m  -> propertyDb String module_lib "name" m
-      File f -> evalApp UFileName [File f]
+      Fun f      -> propertyDb String function_lib "name" f
+      Mod m      -> propertyDb String module_lib "name" m
+      File f     -> evalApp UFileName [File f]
+      Rec r      -> propertyDb String lib_record "name" r
+      TypeExpr t -> propertyDb String lib_typeExp "name" t
+      Type t     -> propertyDb String lib_type "name" t
+-- TODO mit ad vissza a returntypes refactorerlben?
 evalApp UArity [Fun f] = propertyDb Int function_lib "arity" f
 evalApp ULoc [Fun f] = propertyDb Int metrics "metric" arg
     where arg = ErlTuple [ErlAtom "line_of_code",ErlAtom "function",f]
@@ -244,20 +275,21 @@ evalApp UTypeOf [arg] =
 
 -- evalApp URecursivity [Fun f] = wrap . Sq.frecursive $ f
 
+evalApp UReturns [Fun f] = queryDb1 Type UReturns f
+evalApp UOrigin [Expr expr] = do
+  es <- callDb dataflow "reach" args
+  wrap Expr es
+    where args = [ErlList [expr], ErlList [ErlAtom "back"]]
+evalApp UFields [Rec r] = queryDb1 RecField UFields r
 {-
-evalApp UReturns [Fun f] = wrap . Sq.returns $ f
-evalApp UOrigin [Expr expr] = wrap . Sq.origin $ expr
-evalApp UFields [Rec r] = wrap . Sq.rfields $ r
 evalApp UReferences [arg] = 
     case arg of
       Fun f      -> wrap . Sq.freferences $ f
       Rec r      -> wrap . Sq.rreferences $ r
       RecField f -> wrap . Sq.fieldReferences $ f
-evalApp UExpressions [arg] =
-    case arg of
-      Fun f  -> wrap . Sq.expressions $ f
-      Expr e -> wrap . Sq.expressions $ e
 -}
+evalApp UExpressions [Fun f] = queryDb1 Expr UFunExpressions f
+evalApp UExpressions [Expr e] = queryDb1 Expr USubExpressions e
 evalApp UMax [Seq xs] = seq . Sq.max $ xs
 evalApp UMin [Seq xs] = seq . Sq.min $ xs
 evalApp UAverage [Seq xs] = seq . map Int . Sq.average $ ns
@@ -297,6 +329,15 @@ showValue (Mod m)    = do
 showValue (Fun f)    = do 
   String s <- evalApp UName [Fun f]
   return s
+showValue (Rec r)    = do
+  String s <- evalApp UName [Rec r]
+  return s
+showValue (Type t)   = do
+  String s <- evalApp UName [Type t]
+  return s
+showValue (Expr e)   = do
+  s <- callDb syntax "flat_text2" [e]
+  return . strip . fromErlang $ s
 showValue (Int n)    = return . show $ n
 showValue (String s) = return s
 showValue (Bool b)   = return . show $ b
