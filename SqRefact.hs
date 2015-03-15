@@ -38,9 +38,9 @@ instance Ord Value where
     (String s1) <= (String s2) = s1 <= s2
     (Bool a) <= (Bool b) = a <= b
 
-file_lib = "reflib_file"
-module_lib = "reflib_module"
-function_lib = "reflib_function"
+lib_file = "reflib_file"
+lib_module = "reflib_module"
+lib_function = "reflib_function"
 lib_record = "reflib_record"
 lib_spec   = "reflib_spec"
 lib_type   = "reflib_type"
@@ -48,16 +48,27 @@ lib_typeExp = "reflib_typexp"
 lib_clause = "reflib_clause"
 lib_form  = "reflib_form"
 lib_expr = "reflib_expression"
+lib_dynfun = "reflib_dynfun"
 dataflow  = "refanal_dataflow"
 query_lib = "reflib_query"
 metrics = "refusr_metrics"
 syntax  = "refcore_syntax"
 
+filepath   = GPath lib_file
+modpath    = GPath lib_module
+funpath    = GPath lib_function
+clausepath = GPath lib_clause
+formpath   = GPath lib_form
+recpath    = GPath lib_record
+specpath   = GPath lib_spec
+dynfunpath = GPath lib_dynfun
+
 type ErlModule = String
 type ErlFunction = String
 
-data GraphPath = GPath ErlType
+data GraphPath = GPath ErlModule ErlFunction
                | GSeq [GraphPath]
+               | All [GraphPath]
                  deriving Show
 
 data Database = Database 
@@ -101,8 +112,8 @@ eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 eval (UAppExpr f args) env = do
   args' <- mapM (flip eval env) args
   evalApp f args'
-eval UModules _env = queryDb Mod UModules
-eval UFiles _env = queryDb File UFiles
+eval UModules _env = queryDb Mod (modpath "all")
+eval UFiles _env = queryDb File (filepath "all")
 {-
 eval UAtFunction _env = do
   f <- queryDb UAtFunction
@@ -135,29 +146,7 @@ eval (UGuard pred) env = do
   else return $ Seq []
 
 
-gpath :: UQuery -> Query GraphPath
-gpath UModules = getPath module_lib "all"
-gpath UFiles   = getPath file_lib "all"
-
 -- path UModules = return . GPath $ ErlList [ErlTuple [ErlAtom "module",ErlTuple [ErlAtom "name", ErlAtom "/=", ErlList []]]]
-
-pathFun :: UFun -> Query GraphPath
-pathFun URecords   = getPath file_lib "records"
-pathFun UFunctions = getPath module_lib "locals"
-pathFun UFile      = getPath module_lib "file"
-pathFun UCalls     = getPath function_lib "funcalls"
-pathFun UFields    = getPath lib_record "fields"
-pathFun UReturns   = 
-    GSeq <$> sequence [ getPath function_lib "spec"
-                      , getPath lib_spec "returntypes"
-                      ]
-pathFun UFunExpressions = 
-    GSeq <$> sequence [ getPath function_lib "definition"
-                      , getPath lib_form "clauses"
-                      , getPath lib_clause "exprs"
-                      ]
-pathFun USubExpressions = error "unimplemented: subexpressions"
-
 {-
 pathFun UFunctions = 
     return . GPath $ ErlList [ErlTuple 
@@ -172,25 +161,19 @@ callDb mod fun args = do
   db <- ask
   liftIO $ call db mod fun args
 
-getPath :: ErlModule -> ErlFunction -> Query GraphPath
-getPath mod fun = do
-  GPath <$> callDb mod fun []
-
-queryDb :: (ErlType -> Value) -> UQuery -> Query Value
-queryDb f q = do
-  GPath p <- gpath q
-  x <- callDb query_lib "exec" [p]
+queryDb :: (ErlType -> Value) -> GraphPath -> Query Value
+queryDb f p = do
+  p' <- evalPath p
+  x <- callDb query_lib "exec" [p']
   wrap f x
 
-queryDb1 :: (ErlType -> Value) -> UFun -> ErlType -> Query Value
-queryDb1 f g x = do 
-  p <- pathFun g
-  y <- case p of 
-         GPath path  -> callDb query_lib "exec" [x,path]
-         GSeq pathes -> do
-                   let pathes' = [p' | GPath p' <- pathes]
-                   p' <- callDb query_lib "seq" [ErlList pathes']
-                   callDb query_lib "exec" [x,p']
+evalPath :: GraphPath -> Query ErlType
+evalPath (GPath mod fun) = callDb mod fun []
+
+queryDb1 :: (ErlType -> Value) -> GraphPath -> ErlType -> Query Value
+queryDb1 f p x = do 
+  p' <- evalPath p
+  y <- callDb query_lib "exec" [x,p']
   wrap f y
 
 propertyDb :: Erlang a => (a -> Value) -> ErlModule -> ErlFunction -> ErlType -> Query Value
@@ -202,8 +185,6 @@ wrap :: (ErlType -> Value) -> ErlType -> Query Value
 wrap _f ErlNull     = return . Seq $ []
 wrap f (ErlList xs) = return . Seq . map f $ xs
 wrap f x            = return . f $ x
-
-unwrap = undefined
 
 evalRel :: Value -> Binop -> Value -> Bool
 evalRel a Eq  b = a == b
@@ -236,30 +217,32 @@ readVar v env = case lookup v env of
 evalApp :: UFun -> [Value] -> Query Value
 evalApp UName [arg] = 
     case arg of
-      Fun f      -> propertyDb String function_lib "name" f
-      Mod m      -> propertyDb String module_lib "name" m
+      Fun f      -> propertyDb String lib_function "name" f
+      Mod m      -> propertyDb String lib_module "name" m
       File f     -> evalApp UFileName [File f]
       Rec r      -> propertyDb String lib_record "name" r
       TypeExpr t -> propertyDb String lib_typeExp "name" t
       Type t     -> propertyDb String lib_type "name" t
 -- TODO mit ad vissza a returntypes refactorerlben?
-evalApp UArity [Fun f] = propertyDb Int function_lib "arity" f
-evalApp ULoc [Fun f] = propertyDb Int metrics "metric" arg
-    where arg = ErlTuple [ErlAtom "line_of_code",ErlAtom "function",f]
-evalApp ULoc [File f] = propertyDb Int metrics "metric" arg
-    where arg = ErlTuple [ErlAtom "line_of_code",ErlAtom "file",f]
+evalApp UArity [Fun f] = propertyDb Int lib_function "arity" f
+evalApp ULoc [arg]   = propertyDb Int metrics "metric" args
+    where 
+      args = ErlTuple [ErlAtom "line_of_code",ErlAtom typeTag,x]
+      (typeTag, x) = case arg of
+                       Fun f  -> ("function",f)
+                       File f -> ("file",f)                      
 evalApp UNot [Bool pred] = bool . not $ pred
 evalApp UNull [Seq xs] = bool . null $ xs
 evalApp UElem [a,Seq bs] = bool $ a `elem` bs
 evalApp USubset [Seq as,Seq bs] = bool $ as `Sq.all_in` bs
 evalApp UAnyIn [Seq as,Seq bs] = bool $ as `Sq.any_in` bs
 evalApp UUnion [Seq as,Seq bs] = seq $ as `union` bs
-evalApp UCalls [Fun f] = queryDb1 Fun UCalls f
-evalApp UFunctions [Mod m] = queryDb1 Fun UFunctions m
-evalApp URecords [File f] = queryDb1 Rec URecords f
-evalApp UExported [Fun f] = propertyDb Bool function_lib "is_exported" f
-evalApp UFile [Mod m] = queryDb1 File UFile m
-evalApp UPath [File f] = propertyDb String file_lib "path" f
+evalApp UCalls [Fun f] = queryDb1 Fun (funpath "funcalls") f
+evalApp UFunctions [Mod m] = queryDb1 Fun (modpath "locals") m
+evalApp URecords [File f] = queryDb1 Rec (filepath "records") f
+evalApp UExported [Fun f] = propertyDb Bool lib_function "is_exported" f
+evalApp UFile [Mod m] = queryDb1 File (modpath "file") m
+evalApp UPath [File f] = propertyDb String lib_file "path" f
 evalApp UDir f = do 
   String path <- evalApp UPath f
   return . String . takeDirectory $ path
@@ -277,12 +260,22 @@ evalApp UTypeOf [arg] =
 
 -- evalApp URecursivity [Fun f] = wrap . Sq.frecursive $ f
 
-evalApp UReturns [Fun f] = queryDb1 Type UReturns f
+evalApp UReturns [Fun f] = queryDb1 Type path f
+    where path = GSeq [ funpath "spec"
+                      , specpath "returntypes"
+                      ]
 evalApp UOrigin [Expr expr] = do
   es <- callDb dataflow "reach" args
   wrap Expr es
     where args = [ErlList [expr], ErlList [ErlAtom "back"]]
-evalApp UFields [Rec r] = queryDb1 RecField UFields r
+evalApp UFields [Rec r] = queryDb1 RecField (recpath "fields") r
+evalApp UReferences [Fun f] = queryDb1 Fun path f
+    where 
+      path = All [ funpath "applications"
+                 , funpath "implicits"
+                 , funpath "impexps"
+                 , dynfunpath "dynfun_call"
+                 ]
 {-
 evalApp UReferences [arg] = 
     case arg of
@@ -290,8 +283,13 @@ evalApp UReferences [arg] =
       Rec r      -> wrap . Sq.rreferences $ r
       RecField f -> wrap . Sq.fieldReferences $ f
 -}
-evalApp UExpressions [Fun f] = queryDb1 Expr UFunExpressions f
-evalApp UExpressions [Expr e] = queryDb1 Expr USubExpressions e
+evalApp UExpressions [Fun f] = queryDb1 Expr path f
+    where 
+      path = GSeq [ funpath "definition"
+                  , formpath "clauses"
+                  , clausepath "exprs"
+                  ]
+evalApp UExpressions [Expr e] = error "unimplemented"
 evalApp UMax [Seq xs] = seq . Sq.max $ xs
 evalApp UMin [Seq xs] = seq . Sq.min $ xs
 evalApp UAverage [Seq xs] = seq . map Int . Sq.average $ ns
