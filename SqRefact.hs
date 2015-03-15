@@ -47,6 +47,7 @@ lib_type   = "reflib_type"
 lib_typeExp = "reflib_typexp"
 lib_clause = "reflib_clause"
 lib_form  = "reflib_form"
+lib_expr = "reflib_expression"
 dataflow  = "refanal_dataflow"
 query_lib = "reflib_query"
 metrics = "refusr_metrics"
@@ -155,6 +156,7 @@ pathFun UFunExpressions =
                       , getPath lib_form "clauses"
                       , getPath lib_clause "exprs"
                       ]
+pathFun USubExpressions = error "unimplemented: subexpressions"
 
 {-
 pathFun UFunctions = 
