@@ -49,6 +49,7 @@ lib_clause = "reflib_clause"
 lib_form  = "reflib_form"
 lib_expr = "reflib_expression"
 lib_dynfun = "reflib_dynfun"
+lib_args = "reflib_args"
 dataflow  = "refanal_dataflow"
 query_lib = "reflib_query"
 metrics = "refusr_metrics"
@@ -62,6 +63,22 @@ formpath   = GPath lib_form
 recpath    = GPath lib_record
 specpath   = GPath lib_spec
 dynfunpath = GPath lib_dynfun
+
+type FilePosition = Int
+type File = String
+
+type Arg = (File,FilePosition)
+
+getArg :: Query ErlType
+getArg = do
+  Just (file,pos) <- lift ask
+  return $ ErlList [ erlPair (ErlAtom "ask_missing") (ErlAtom "false")
+                   , erlPair (ErlAtom "file") file
+                   , erlPair (ErlAtom "position") pos
+                   ]
+
+erlPair :: (Erlang a, Erlang b) => a -> b -> ErlType
+erlPair a b = ErlTuple [toErlang a,toErlang b]
 
 type ErlModule = String
 type ErlFunction = String
@@ -87,7 +104,7 @@ database mbox = Database { call = rpcCall mbox referl }
 
 type Env = [(Id, Value)]
 
-type Query a = ReaderT Database IO a
+type Query a = ReaderT Database (ReaderT (Maybe Arg) IO) a
 
 eval :: UQuery -> Env -> Query Value
 eval (UBind m (UF x body)) env = do 
@@ -120,11 +137,13 @@ eval UAtFunction _env = do
   case f of
     ErlNull    -> return $ Seq []
     ErlTuple _ -> return $ Seq [Fun f]
+-}
 eval UAtFile _env = do
-  f <- queryDb UAtFile
-  case f of
-    ErlNull    -> return $ Seq []
-    ErlTuple _ -> return $ Seq [Fun f]  
+  arg <- getArg
+  f <- callDb lib_args "file" [arg]
+  return . File $ f
+      
+{-
 eval UAtModule _env = wrap Sq.atModule
 eval UAtExpr _env = wrap Sq.atExpression
 -}
@@ -242,6 +261,7 @@ evalApp UFunctions [Mod m] = queryDb1 Fun (modpath "locals") m
 evalApp URecords [File f] = queryDb1 Rec (filepath "records") f
 evalApp UExported [Fun f] = propertyDb Bool lib_function "is_exported" f
 evalApp UFile [Mod m] = queryDb1 File (modpath "file") m
+evalApp UModule [File f] = queryDb1 Mod (filepath "module") f
 evalApp UPath [File f] = propertyDb String lib_file "path" f
 evalApp UDir f = do 
   String path <- evalApp UPath f

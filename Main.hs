@@ -9,11 +9,11 @@ import Control.Monad.Reader
 import Control.Monad.Error (throwError)
 import System.Environment (getArgs)
 
-run :: String -> IO ()
-run s = case runchk s start [] of
+run :: String -> Maybe Arg -> IO ()
+run s arg = case runchk s start [] of
           Right (q ::: _) -> do db <- initErl "haskell@localhost"
-                                x <- runReaderT (eval q []) db
-                                s <- runReaderT (showValue x) db
+                                x <- runReaderT (runReaderT (eval q []) db) arg
+                                s <- runReaderT (runReaderT (showValue x) db) arg
                                 putStrLn s
           Left err -> putStrLn $ "error: " ++ err
 
@@ -24,5 +24,7 @@ runchk s parser env = case runParser parser Nothing "" s of
 
 main :: IO ()
 main = do
-  [s] <- getArgs
-  run s
+  a <- getArgs
+  case a of
+    [s] -> run s Nothing
+    [s,file,pos] -> run s (Just (file,read pos))

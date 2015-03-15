@@ -146,6 +146,7 @@ funtypes =
     , ("directory",  (UDir, File :->: FilePath))
     , ("filename",  (UFileName, File :->: FilePath))
     , ("file",  (UFile, Mod :->: List File))
+    , ("module", (UModule, File :->: List Mod))
     , ("records",  (URecords, File :->: List Record))
     , ("exported",  (UExported, Fun :->: Bool))
     , ("recursivity",  (URecursivity, Fun :->: FunRecursivity))
