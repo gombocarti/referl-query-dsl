@@ -98,6 +98,7 @@ initErl name = do
   mbox <- createMBox self
   return $ database mbox
 
+referl :: String
 referl = "refactorerl"
 
 database :: MBox -> Database
@@ -162,8 +163,8 @@ eval (URelation rel p1 p2) env = do
 eval (UGuard pred) env = do
   Bool p <- eval pred env
   if p 
-  then return $ Seq [Unit]
-  else return $ Seq []
+  then seq [Unit]
+  else seq []
 
 -- noob
 erlError :: ErlType -> Bool
