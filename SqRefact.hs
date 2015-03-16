@@ -6,6 +6,7 @@ import Foreign.Erlang
 import Data.List (union,nub)
 import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
+import Control.Monad.Error
 import Data.Functor ((<$>))
 import System.FilePath (takeFileName,takeDirectory)
 import Data.String.Utils (strip)
@@ -104,7 +105,7 @@ database mbox = Database { call = rpcCall mbox referl }
 
 type Env = [(Id, Value)]
 
-type Query a = ReaderT Database (ReaderT (Maybe Arg) IO) a
+type Query a = ReaderT Database (ReaderT (Maybe Arg) (ErrorT String IO)) a
 
 eval :: UQuery -> Env -> Query Value
 eval (UBind m (UF x body)) env = do 
@@ -133,13 +134,11 @@ eval UModules _env = queryDb Mod (modpath "all")
 eval UFiles _env = queryDb File (filepath "all")
 eval UAtFunction _env = do
   arg <- getArg
-  f <- callDb lib_args "function" [arg]
-  if erlError f
-  then error "atFunction: no function at given position"
-  else return . Fun $ f
+  f <- callDb' lib_args "function" [arg] (throwError "atFunction: no function at given position")
+  return . Fun $ f
 eval UAtFile _env = do
   arg <- getArg
-  f <- callDb lib_args "file" [arg]
+  f <- callDb' lib_args "file" [arg] (throwError "atFile: no file at given position")
   return . File $ f
 eval UAtModule _env = do
   arg <- getArg
@@ -147,7 +146,7 @@ eval UAtModule _env = do
   return . Mod $ m
 eval UAtExpr _env = do
   arg <- getArg
-  e <- callDb lib_args "expression" [arg]
+  e <- callDb' lib_args "expression" [arg] (throwError "atExpression: no expression at given position")
   return . Expr $ e
 eval (UReturn e) env = do 
   x <- eval e env
@@ -186,6 +185,14 @@ callDb :: ErlModule -> ErlFunction -> [ErlType] -> Query ErlType
 callDb mod fun args = do
   db <- ask
   liftIO $ call db mod fun args
+
+callDb' :: ErlModule -> ErlFunction -> [ErlType] -> Query ErlType -> Query ErlType
+callDb' mod fun args x = do
+  db <- ask
+  y <- liftIO $ call db mod fun args
+  if erlError y
+  then x
+  else return y
 
 queryDb :: (ErlType -> Value) -> GraphPath -> Query Value
 queryDb f p = do
