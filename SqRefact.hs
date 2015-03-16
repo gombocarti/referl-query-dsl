@@ -304,13 +304,13 @@ evalApp UTypeOf [arg] =
 evalApp UReturns [Fun f] = queryDb1 Type path f
     where path = GSeq [ funpath "spec"
                       , specpath "returntypes"
-                      ]
+                      ] -- todo: typexp -> namedtype konverzio
 evalApp UOrigin [Expr expr] = do
   es <- callDb dataflow "reach" args
   wrap Expr es
     where args = [ErlList [expr], ErlList [ErlAtom "back"]]
 evalApp UFields [Rec r] = queryDb1 RecField (recpath "fields") r
-evalApp UReferences [Fun f] = queryDb1 Fun path f
+evalApp UReferences [Fun f] = queryDb1 Expr path f
     where 
       path = All [ funpath "applications"
                  , funpath "implicits"
@@ -330,7 +330,7 @@ evalApp UExpressions [Fun f] = queryDb1 Expr path f
                   , formpath "clauses"
                   , clausepath "exprs"
                   ]
-evalApp UExpressions [Expr e] = error "unimplemented"
+evalApp UExpressions [Expr e] = throwError "unimplemented"
 evalApp UMax [Seq xs] = seq . Sq.max $ xs
 evalApp UMin [Seq xs] = seq . Sq.min $ xs
 evalApp UAverage [Seq xs] = seq . map Int . Sq.average $ ns
