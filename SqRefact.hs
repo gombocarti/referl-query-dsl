@@ -131,22 +131,24 @@ eval (UAppExpr f args) env = do
   evalApp f args'
 eval UModules _env = queryDb Mod (modpath "all")
 eval UFiles _env = queryDb File (filepath "all")
-{-
 eval UAtFunction _env = do
-  f <- queryDb UAtFunction
-  case f of
-    ErlNull    -> return $ Seq []
-    ErlTuple _ -> return $ Seq [Fun f]
--}
+  arg <- getArg
+  f <- callDb lib_args "function" [arg]
+  if erlError f
+  then error "atFunction: no function at given position"
+  else return . Fun $ f
 eval UAtFile _env = do
   arg <- getArg
   f <- callDb lib_args "file" [arg]
   return . File $ f
-      
-{-
-eval UAtModule _env = wrap Sq.atModule
-eval UAtExpr _env = wrap Sq.atExpression
--}
+eval UAtModule _env = do
+  arg <- getArg
+  m <- callDb lib_args "module" [arg]
+  return . Mod $ m
+eval UAtExpr _env = do
+  arg <- getArg
+  e <- callDb lib_args "expression" [arg]
+  return . Expr $ e
 eval (UReturn e) env = do 
   x <- eval e env
   return $ Seq [x]
@@ -163,6 +165,11 @@ eval (UGuard pred) env = do
   if p 
   then return $ Seq [Unit]
   else return $ Seq []
+
+-- noob
+erlError :: ErlType -> Bool
+erlError (ErlTuple (ErlAtom x:_)) = x `elem` ["badrpc","reflib_error"]
+erlError _ = False
 
 
 -- path UModules = return . GPath $ ErlList [ErlTuple [ErlAtom "module",ErlTuple [ErlAtom "name", ErlAtom "/=", ErlList []]]]
