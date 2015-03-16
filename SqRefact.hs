@@ -151,7 +151,7 @@ eval UAtExpr _env = do
   return . Expr $ e
 eval (UReturn e) env = do 
   x <- eval e env
-  return $ Seq [x]
+  seq [x]
 eval (UStringLit s) _env = return $ String s
 eval (UNumLit i) _env = return $ Int i
 eval (UExprTypeLit t) _env = return $ ExprType t
@@ -159,7 +159,7 @@ eval (UFunRecurLit fr) _env = return $ FunRecursivity fr
 eval (URelation rel p1 p2) env = do 
   p1' <- eval p1 env
   p2' <- eval p2 env
-  return . Bool $ evalRel p1' rel p2'       
+  bool $ evalRel p1' rel p2'       
 eval (UGuard pred) env = do
   Bool p <- eval pred env
   if p 
@@ -203,6 +203,12 @@ queryDb f p = do
 
 evalPath :: GraphPath -> Query ErlType
 evalPath (GPath mod fun) = callDb mod fun []
+evalPath (GSeq xs) = do
+  ps <- mapM evalPath xs
+  callDb query_lib "seq" [ErlList ps]
+evalPath (All xs) = do
+  ps <- mapM evalPath xs
+  callDb query_lib "all" [ErlList ps]
 
 queryDb1 :: (ErlType -> Value) -> GraphPath -> ErlType -> Query Value
 queryDb1 f p x = do 
