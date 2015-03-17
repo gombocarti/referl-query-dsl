@@ -37,12 +37,13 @@ check (URef name) e | knownFun name =
                     | otherwise = 
                         do t <- getVar e name
                            return $ UVarExpr name ::: t
-check (UDataConst cons) e = case readMaybe cons of 
-                              Just x -> return $ UExprTypeLit x ::: ExprType
-                              Nothing -> do
-                                case readMaybe cons of
-                                  Just x -> return $ UFunRecurLit x ::: FunRecursivity
-                                  Nothing -> throwError $ "unknown constant: " ++ cons
+check (UDataConst cons) e =
+    case readMaybe cons of 
+      Just x -> return $ UExprTypeLit x ::: ExprType
+      Nothing -> do
+        case readMaybe cons of
+          Just x -> return $ UFunRecurLit x ::: FunRecursivity
+          Nothing -> throwError $ "unknown constant: " ++ cons
 check UModules _env = return $ UModules ::: List Mod
 check UFiles _env = return $ UFiles ::: List File
 check UAtFile _env = return $ UAtFile ::: File
