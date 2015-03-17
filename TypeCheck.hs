@@ -19,13 +19,15 @@ check :: UQuery -> TEnv -> Either String TUQuery
 check (UBind m (UF x body)) e = do
   m' ::: List tm <- check m e
   body' ::: List tbody <- check body ((x,tm):e)
-  return $ (UBind m' (UF x body')) ::: List tbody
+  return $ UBind m' (UF x body') ::: List tbody
 check (UReturn x) e = do
   x' ::: t <- check x e
   return $ UReturn x' ::: List t
---check (UGroupBy f q) e = do
---  q' ::: List tq <- check m e
-  
+check (UGroupBy (UFName f) q) e = do
+  q' ::: List tq <- check q e
+  (f',ft) <- getFunType f
+  apptype <- typeCheck f ft [tq]
+  return $ UGroupBy f' q' ::: Grouped apptype tq
 check (UVarExpr v) e = do
   tv <- getVar e v  
   return $ UVarExpr v ::: tv
@@ -150,6 +152,7 @@ funtypes =
     , ("filename",  (UFileName, File :->: FilePath))
     , ("file",  (UFile, Mod :->: List File))
     , ("module", (UModule, File :->: List Mod))
+    , ("defmodule", (UDefModule, Fun :->: Mod))
     , ("records",  (URecords, File :->: List Record))
     , ("exported",  (UExported, Fun :->: Bool))
     , ("recursivity",  (URecursivity, Fun :->: FunRecursivity))

@@ -91,6 +91,7 @@ data Value
     | Path FilePath
     | Chain (Sq.Chain Value)
     | Seq [Value]
+    | Grouped [(Value, [Value])]
       deriving (Eq,Show)
 
 {-
@@ -135,9 +136,12 @@ eval (UBind m (UF x body)) env = concatValue xs
       Seq as = eval m env
       xs = [eval body ((x,a):env) | a <- as]
 eval (UVarExpr v) env = readVar v env
-eval (UGroupBy f q) env = Seq . map Seq . groupBy g $ xs
+eval (UGroupBy f q) env = Grouped res
     where Seq xs = eval q env
+          groups = groupBy g xs
           g x y = (evalApp f [x] == evalApp f [y])
+          h group = (evalApp f [head group],group)
+          res = map h groups          
 eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
     where f      = makeFun fs
           Int n' = eval n env
@@ -207,6 +211,7 @@ evalApp UFunctions [Mod m] = wrap . Sq.functions $ m
 evalApp URecords [File f] = wrap . Sq.frecords $ f
 evalApp UExported [Fun f] = wrap . Sq.fexported $ f
 evalApp UFile [Mod m] = wrap . Sq.mfile $ m
+evalApp UDefModule [Fun f] = wrap . Sq.fmodule $ f
 evalApp UPath [File f] = wrap . Sq.fpath $ f
 evalApp UDir [File f] = wrap . Sq.dir $ f
 evalApp UFileName [File f] = wrap . Sq.filename $ f

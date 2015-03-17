@@ -61,6 +61,7 @@ data UFun
     | UIsModule  -- ^ True if the file contains a module.
     | UFile      -- ^ File of a module.
     | UModule    -- ^ Module of a file.
+    | UDefModule -- ^ Module of function.
     | URecords   -- ^ Records defined in a file.
     | UExports   -- ^ Exported functions of a module.
     | UImports   -- ^ Imported functions of a module.
@@ -124,6 +125,7 @@ data Binop
 data Typ
     = List Typ
     | Chain Typ
+    | Grouped Typ Typ
     | File
     | Mod
     | Fun
