@@ -3,11 +3,12 @@ module SqRefact where
 import Prelude hiding (seq,mod)
 import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..))
 import Foreign.Erlang
-import Data.List (union,nub)
+import Data.List (union,nub,groupBy)
 import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
 import Control.Monad.Error
 import Data.Functor ((<$>))
+import Data.Function (on)
 import System.FilePath (takeFileName,takeDirectory)
 import Data.String.Utils (strip)
 
@@ -32,6 +33,7 @@ data Value
     | Path FilePath
     | Chain (Sq.Chain Value)
     | Seq [Value]
+    | Grouped [(Value,Value)]
       deriving (Eq,Show)
 
 instance Ord Value where
@@ -113,6 +115,15 @@ eval (UBind m (UF x body)) env = do
   Seq as <-  eval m env
   xs <- forM as (\a -> eval body ((x,a):env))
   return $ concatValue xs
+eval (UGroupBy f q) env = do
+  Seq xs <- eval q env
+  ys <- forM xs (\x -> evalApp f [x])
+  let zs = zip ys xs
+  return $ Grouped (group zs)
+    where 
+      group xs = map merge (groupBy criteria xs)
+      criteria = (==) `on` fst
+      merge xs = (fst . head $ xs, Seq (map snd xs))
 eval (UVarExpr v) env = return $ readVar v env
 {-
 eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
@@ -282,6 +293,7 @@ evalApp UFunctions [Mod m] = queryDb1 Fun (modpath "locals") m
 evalApp URecords [File f] = queryDb1 Rec (filepath "records") f
 evalApp UExported [Fun f] = propertyDb Bool lib_function "is_exported" f
 evalApp UFile [Mod m] = queryDb1 File (modpath "file") m
+evalApp UDefModule [Fun f] = queryDb1 Mod (funpath "module") f
 evalApp UModule [File f] = queryDb1 Mod (filepath "module") f
 evalApp UPath [File f] = propertyDb String lib_file "path" f
 evalApp UDir f = do 
@@ -362,8 +374,8 @@ getChain (Sq.Recursive xs)  = xs
 
 showValue :: Value -> Query String
 showValue (File f)   = do
-  String path <- evalApp UFileName [File f]
-  return path  
+  String name <- evalApp UFileName [File f]
+  return name  
 showValue (Mod m)    = do 
   String s <- evalApp UName [Mod m]
   return s
@@ -383,3 +395,8 @@ showValue (Int n)    = return . show $ n
 showValue (String s) = return s
 showValue (Bool b)   = return . show $ b
 showValue (Seq xs)   = unlines <$> mapM showValue xs
+showValue (Grouped xs) = unlines <$> mapM showGroup xs
+    where showGroup (x,ys) = do
+            sx <- showValue x
+            sys <- showValue ys
+            return $ sx ++ unlines ["  " ++ sy | sy <- words sys]
