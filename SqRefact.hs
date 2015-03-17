@@ -379,9 +379,10 @@ showValue (File f)   = do
 showValue (Mod m)    = do 
   String s <- evalApp UName [Mod m]
   return s
-showValue (Fun f)    = do 
-  String s <- evalApp UName [Fun f]
-  return s
+showValue f@(Fun _)    = do 
+  String name <- evalApp UName [f]
+  Int arity <- evalApp UArity [f]
+  return $ name ++ "/" ++ show arity
 showValue (Rec r)    = do
   String s <- evalApp UName [Rec r]
   return s
