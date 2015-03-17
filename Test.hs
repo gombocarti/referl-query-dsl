@@ -1,6 +1,6 @@
 module Test where
 
-import SqDeep (Value(..), run, Wrap(..))
+import SqDeep (Value(..), eval, Wrap(..))
 import Sq hiding ((==), Int)
 import Control.Exception (catch, SomeException)
 
@@ -70,7 +70,7 @@ check ts = runAll ts 0 0
       runAll :: [TestCase] -> Int -> Int -> IO ()
       runAll [] p f = putStrLn $ "passed " ++ show p ++ " failed " ++ show f
       runAll ((t,expected):ts) p f =
-                 (case run t of
+                 (case eval t [] of
                     Right actual -> if actual == expected
                                     then runAll ts (p + 1) f
                                     else do

@@ -2,12 +2,11 @@
 module SqDeep where
 
 import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..))
-import Parser (start)
 import TypeCheck (check)
 import Text.Parsec (runParser)
 import Control.Monad.Error (throwError)
 import Data.Functor ((<$>))
-import Data.List (union,nub)
+import Data.List (union,nub,groupBy)
 import Text.Regex.Posix ((=~))
 
 import qualified Sq
@@ -117,7 +116,8 @@ instance Sq.Named Value where
     name (Fun f)      = Sq.name f
     name (RecField f) = Sq.name f
     name (Rec r)      = Sq.name r
-               
+
+{-               
 run :: String -> Either String Value
 run s = either (throwError . show) 
         (\q -> do { q' ::: _ <- check q []; return $ eval q' [] })
@@ -127,6 +127,7 @@ run' :: String -> IO ()
 run' s = case run s of
            Left err -> putStrLn err
            Right v -> print v
+-}
 
 eval :: UQuery -> Env -> Value
 eval (UBind m (UF x body)) env = concatValue xs
@@ -134,6 +135,9 @@ eval (UBind m (UF x body)) env = concatValue xs
       Seq as = eval m env
       xs = [eval body ((x,a):env) | a <- as]
 eval (UVarExpr v) env = readVar v env
+eval (UGroupBy f q) env = Seq . map Seq . groupBy g $ xs
+    where Seq xs = eval q env
+          g x y = (evalApp f [x] == evalApp f [y])
 eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
     where f      = makeFun fs
           Int n' = eval n env

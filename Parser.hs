@@ -18,6 +18,7 @@ sqDef = L.haskellStyle
         { T.identStart = lower
         , T.opStart = oneOf "<=>∪⊆∈∘"
         , T.opLetter = T.opStart sqDef
+        , T.reservedNames = ["group"]
         }
 
 lexer = T.makeTokenParser sqDef
@@ -43,8 +44,8 @@ query :: QParser UQuery
 query = braces bind <?> "query"
 -}
 
-query :: QParser UQuery
-query = braces q <?> "query"
+set :: QParser UQuery
+set = braces q <?> "query"
     where q = do
             r <- ret
             _ <- vline
@@ -54,14 +55,21 @@ query = braces q <?> "query"
             putState x
             return b
 
-aggregate :: QParser UQuery
-aggregate = do
+aggregation :: QParser UQuery
+aggregation = do
   f <- identifier
-  q <- query
+  q <- set
   return $ UAppExpr (UFName f) [q]
 
-start :: QParser UQuery
-start = whiteSpace *> (query <|> aggregate)
+groupby :: QParser UQuery
+groupby = do
+  try $ reserved "group"
+  f <- identifier
+  q <- set
+  return $ UGroupBy (UFName f) q
+
+query :: QParser UQuery
+query = whiteSpace *> (set <|> groupby <|> aggregation)
 
 ref :: QParser UQuery
 ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))
@@ -80,13 +88,13 @@ app = parens app
               args <- many1 (argument <|> parens argument)
               return (UAppExpr (UFName f) args))
       <?> "function application"
-          where argument = numLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> query
+          where argument = numLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> set
 
 infixSetOp :: String -> QParser UQuery
 infixSetOp op = 
     do
-      as <- try $ (query <|> initial <|> app <|> ref) <* reservedOp op
-      bs <- query <|> initial <|> app
+      as <- try $ (set <|> initial <|> app <|> ref) <* reservedOp op
+      bs <- set <|> initial <|> app
       return $ UAppExpr (UFName op) [as,bs]
     <|> parens (infixSetOp op)
 
@@ -129,7 +137,7 @@ bindop :: QParser String
 bindop = symbol "<-"
 
 bindable :: QParser UQuery
-bindable = initial <|> union <|> query <|> app
+bindable = initial <|> union <|> set <|> app
 
 following :: QParser UQuery
 following = do q <-  optionMaybe (comma *> (bind <|> filter))
@@ -147,7 +155,7 @@ vline :: QParser String
 vline = symbol "|"
 
 ret :: QParser UQuery
-ret = UReturn <$> (app <|> ref <|> query)
+ret = UReturn <$> (app <|> ref <|> set)
 
 relation :: QParser UQuery
 relation = do rel <- try $ do 

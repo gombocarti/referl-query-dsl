@@ -31,6 +31,7 @@ data UQuery
     | UFunComp [UFun]
     | UBind UQuery UF
     | UReturn UQuery
+    | UGroupBy UFun UQuery
     | UVarExpr Id
     | UGuard UQuery
     | URelation Binop UQuery UQuery

@@ -1,9 +1,9 @@
 import Types
 import Parser
 import TypeCheck
---import SqDeep
+import qualified SqDeep as Sd
 import SqRefact
-import qualified Test
+-- import qualified Test
 import Text.Parsec (runParser)
 import Control.Monad.Reader
 import Control.Monad.Error
@@ -13,14 +13,14 @@ runQuery :: Query a ->  Database -> Maybe Arg -> IO (Either String a)
 runQuery q db arg = runErrorT (runReaderT (runReaderT q db) arg)
 
 run :: String -> Maybe Arg -> IO ()
-run sq arg = case runchk sq start [] of
+run sq arg = case runchk sq query [] of
                   Right (q ::: _) -> do
                     db <- initErl "haskell@localhost"
                     x <- runQuery (eval q [] >>= showValue) db arg
                     case x of
                       Right s  -> putStrLn s
                       Left err -> putStrLn ("error: " ++ err)
-                  Left err -> putStrLn $ "error: " ++ err
+                  Left err -> putStrLn ("error: " ++ err)
 
 runchk :: String -> QParser UQuery -> TEnv ->  Either String TUQuery
 runchk s parser env = case runParser parser Nothing "" s of

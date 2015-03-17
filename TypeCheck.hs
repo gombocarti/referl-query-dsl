@@ -23,6 +23,9 @@ check (UBind m (UF x body)) e = do
 check (UReturn x) e = do
   x' ::: t <- check x e
   return $ UReturn x' ::: List t
+--check (UGroupBy f q) e = do
+--  q' ::: List tq <- check m e
+  
 check (UVarExpr v) e = do
   tv <- getVar e v  
   return $ UVarExpr v ::: tv
