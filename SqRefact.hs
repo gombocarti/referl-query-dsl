@@ -11,6 +11,7 @@ import Data.Functor ((<$>))
 import Data.Function (on)
 import System.FilePath (takeFileName,takeDirectory)
 import Data.String.Utils (strip)
+import Text.PrettyPrint hiding (int)
 
 import qualified Sq
 
@@ -400,7 +401,7 @@ showValue (Expr e)     = do
 showValue (Int n)      = return . show $ n
 showValue (String s)   = return s
 showValue (Bool b)     = return . show $ b
-showValue (Seq xs@((Tuple _ _):_)) = showTuples xs  
+showValue (Seq xs@((Tuple _ _):_)) = render <$> showTuples xs  
 showValue (Seq xs)     = unlines <$> mapM showValue xs
 showValue (Grouped xs) = unlines <$> mapM showGroup xs
     where showGroup (x,ys) = do
@@ -408,12 +409,16 @@ showValue (Grouped xs) = unlines <$> mapM showGroup xs
             sys <- showValue ys
             return $ sx ++ unlines ["  " ++ sy | sy <- words sys]
 
-showTuples :: [Value] -> Query String
+showTuples :: [Value] -> Query Doc
 showTuples ((Tuple ids xs):ts) = do
   first <- mapM showValue xs
   lines <- mapM showLine ts
-  let lines' = map unwords lines
-  return $ unlines [unwords ids,unwords first,unlines lines']
+  let lines' = vcat lines
+      first' = hsep . map text $ first
+      ids'   = hsep . map text $ ids
+  return $ vcat [ids',first', lines']
 
-showLine :: Value -> Query [String]
-showLine (Tuple _ xs) = mapM showValue xs
+showLine :: Value -> Query Doc
+showLine (Tuple _ xs) = do
+  line <- mapM showValue xs
+  return . hsep . map text $ line
