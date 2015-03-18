@@ -36,6 +36,7 @@ stringLiteral = T.stringLiteral lexer
 comma      = T.comma lexer
 decimal    = T.decimal lexer
 parens     = T.parens lexer
+commaSep1  = T.commaSep1 lexer
 
 type QParser a = ParsecT String (Maybe UQuery) Identity a
 
@@ -155,7 +156,12 @@ vline :: QParser String
 vline = symbol "|"
 
 ret :: QParser UQuery
-ret = UReturn <$> (app <|> ref <|> set)
+ret = UReturn <$> (tuple <|> app <|> ref <|> set)
+
+tuple :: QParser UQuery
+tuple = parens elems <?> "tuple"
+    where 
+      elems = UTuple <$> commaSep1 ref
 
 relation :: QParser UQuery
 relation = do rel <- try $ do 

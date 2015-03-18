@@ -23,6 +23,10 @@ check (UBind m (UF x body)) e = do
 check (UReturn x) e = do
   x' ::: t <- check x e
   return $ UReturn x' ::: List t
+check (UTuple xs) e = do
+  xs' <- mapM (flip check e) xs
+  let (ys,tys) = unzip [(y,ty) | y ::: ty <- xs']
+  return $ UTuple ys ::: Tuple tys
 check (UGroupBy (UFName f) q) e = do
   q' ::: List tq <- check q e
   (f',ft) <- getFunType f

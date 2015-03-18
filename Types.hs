@@ -31,6 +31,7 @@ data UQuery
     | UFunComp [UFun]
     | UBind UQuery UF
     | UReturn UQuery
+    | UTuple [UQuery]
     | UGroupBy UFun UQuery
     | UVarExpr Id
     | UGuard UQuery
@@ -48,7 +49,7 @@ data UQuery
     | UAtModule 
     | UAtFunction
     | UAtExpr
-      deriving Show
+      deriving (Show,Eq)
 
 data TUQuery = UQuery ::: Typ deriving Show
 
@@ -109,7 +110,7 @@ data UFun
 
 -- |Untyped function.
 data UF = UF Id UQuery
-          deriving Show
+          deriving (Show,Eq)
 
 data Binop
     = Eq
@@ -124,6 +125,7 @@ data Binop
 -- |Types of the query language.
 data Typ
     = List Typ
+    | Tuple [Typ]
     | Chain Typ
     | Grouped Typ Typ
     | File

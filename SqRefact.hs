@@ -34,7 +34,8 @@ data Value
     | Chain (Sq.Chain Value)
     | Seq [Value]
     | Grouped [(Value,Value)]
-      deriving (Eq,Show)
+    | Tuple [Id] [Value]
+      deriving (Show,Eq)
 
 instance Ord Value where
     (Int a) <= (Int b) = a <= b
@@ -163,6 +164,10 @@ eval UAtExpr _env = do
 eval (UReturn e) env = do 
   x <- eval e env
   seq [x]
+eval (UTuple ids) env = do
+  xs <- mapM (flip eval env) ids
+  let names = [name | UVarExpr name <- ids]
+  return $ Tuple names xs
 eval (UStringLit s) _env = return $ String s
 eval (UNumLit i) _env = return $ Int i
 eval (UExprTypeLit t) _env = return $ ExprType t
@@ -389,15 +394,26 @@ showValue r@(Rec _)    = do
 showValue t@(Type _)   = do
   String s <- evalApp UName [t]
   return s
-showValue (Expr e)   = do
+showValue (Expr e)     = do
   s <- callDb syntax "flat_text2" [e]
   return . strip . fromErlang $ s
-showValue (Int n)    = return . show $ n
-showValue (String s) = return s
-showValue (Bool b)   = return . show $ b
-showValue (Seq xs)   = unlines <$> mapM showValue xs
+showValue (Int n)      = return . show $ n
+showValue (String s)   = return s
+showValue (Bool b)     = return . show $ b
+showValue (Seq xs@((Tuple _ _):_)) = showTuples xs  
+showValue (Seq xs)     = unlines <$> mapM showValue xs
 showValue (Grouped xs) = unlines <$> mapM showGroup xs
     where showGroup (x,ys) = do
             sx <- showValue x
             sys <- showValue ys
             return $ sx ++ unlines ["  " ++ sy | sy <- words sys]
+
+showTuples :: [Value] -> Query String
+showTuples ((Tuple ids xs):ts) = do
+  first <- mapM showValue xs
+  lines <- mapM showLine ts
+  let lines' = map unwords lines
+  return $ unlines [unwords ids,unwords first,unlines lines']
+
+showLine :: Value -> Query [String]
+showLine (Tuple _ xs) = mapM showValue xs
