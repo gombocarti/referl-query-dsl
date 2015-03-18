@@ -154,7 +154,7 @@ eval UAtFile _env = do
   return . File $ f
 eval UAtModule _env = do
   arg <- getArg
-  m <- callDb lib_args "module" [arg]
+  m <- callDb' lib_args "module" [arg] (throwError "atModule: no module at given position")
   return . Mod $ m
 eval UAtExpr _env = do
   arg <- getArg
