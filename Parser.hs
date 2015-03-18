@@ -69,7 +69,7 @@ groupby = do
   return $ UGroupBy (UFName f) q
 
 query :: QParser UQuery
-query = whiteSpace *> (set <|> groupby <|> aggregation)
+query = whiteSpace *> (set <|> initial <|> groupby <|> aggregation)
 
 ref :: QParser UQuery
 ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))
