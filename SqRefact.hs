@@ -373,21 +373,21 @@ getChain (Sq.Complete xs)   = xs
 getChain (Sq.Recursive xs)  = xs
 
 showValue :: Value -> Query String
-showValue (File f)   = do
-  String name <- evalApp UFileName [File f]
+showValue f@(File _)   = do
+  String name <- evalApp UFileName [f]
   return name  
-showValue (Mod m)    = do 
-  String s <- evalApp UName [Mod m]
+showValue m@(Mod _)    = do 
+  String s <- evalApp UName [m]
   return s
 showValue f@(Fun _)    = do 
   String name <- evalApp UName [f]
   Int arity <- evalApp UArity [f]
   return $ name ++ "/" ++ show arity
-showValue (Rec r)    = do
-  String s <- evalApp UName [Rec r]
+showValue r@(Rec _)    = do
+  String s <- evalApp UName [r]
   return s
-showValue (Type t)   = do
-  String s <- evalApp UName [Type t]
+showValue t@(Type _)   = do
+  String s <- evalApp UName [t]
   return s
 showValue (Expr e)   = do
   s <- callDb syntax "flat_text2" [e]
