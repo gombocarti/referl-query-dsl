@@ -3,7 +3,7 @@ module SqRefact where
 import Prelude hiding (seq,mod)
 import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..))
 import Foreign.Erlang
-import Data.List (union,nub,groupBy)
+import Data.List (union,nub,groupBy,intercalate)
 import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
 import Control.Monad.Error
@@ -401,7 +401,7 @@ showValue (Expr e)     = do
 showValue (Int n)      = return . show $ n
 showValue (String s)   = return s
 showValue (Bool b)     = return . show $ b
-showValue (Seq xs@((Tuple _ _):_)) = render <$> showTuples xs  
+showValue (Seq xs@((Tuple _ _):_)) = showTuples xs  
 showValue (Seq xs)     = unlines <$> mapM showValue xs
 showValue (Grouped xs) = unlines <$> mapM showGroup xs
     where showGroup (x,ys) = do
@@ -409,16 +409,36 @@ showValue (Grouped xs) = unlines <$> mapM showGroup xs
             sys <- showValue ys
             return $ sx ++ unlines ["  " ++ sy | sy <- words sys]
 
-showTuples :: [Value] -> Query Doc
-showTuples ((Tuple ids xs):ts) = do
-  first <- mapM showValue xs
+showTuples :: [Value] -> Query String
+showTuples ts@((Tuple ids xs):_) = do
   lines <- mapM showLine ts
-  let lines' = vcat lines
-      first' = hsep . map text $ first
-      ids'   = hsep . map text $ ids
-  return $ vcat [ids',first', lines']
+  let colWidths = colWidth lines (replicate (length ids) 0)
+      ids'   = intercalate "|" $ zipWith padLabel ids colWidths
+      lines' = unlines $ map (flip padLine colWidths) lines
+      sep    = replicate (sum colWidths) '-'
+  return $ unlines [ids',sep,lines']
+    where 
+      padLabel label width = fillCenter width label
+      padLine line widths  = concat $ zipWith padValue line widths
+      padValue value width = fillLeft (width + 4) value
 
-showLine :: Value -> Query Doc
-showLine (Tuple _ xs) = do
-  line <- mapM showValue xs
-  return . hsep . map text $ line
+showLine :: Value -> Query [String]
+showLine (Tuple _ xs) = mapM showValue xs
+
+colWidth :: [[String]] -> [Int] -> [Int]
+colWidth [] widths        = widths
+colWidth (line:ls) widths = colWidth ls newWidths
+    where
+      newWidths = zipWith maxWidth line widths
+      maxWidth s width = max (length s) width
+
+type ColWidth = Int
+
+fillLeft :: ColWidth -> String -> String
+fillLeft n s = s ++ replicate (n - length s) ' '
+
+fillCenter :: ColWidth -> String -> String
+fillCenter n s = pad ++ s ++ pad
+    where 
+      padWidth = (n - length s) `div` 2
+      pad      = replicate padWidth ' '
