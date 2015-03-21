@@ -2,28 +2,43 @@ module Parser where
 
 import Text.Parsec
 import Text.Parsec.String
+import Text.Parsec.Pos (newPos)
 import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
 import Control.Applicative ((<$>))
 import Control.Monad.Identity
+import Control.Monad.IO.Class (liftIO)
 import Prelude hiding (filter)
 import Data.Maybe (fromJust)
+import qualified Control.Exception as E (try, SomeException)
 
 import Types (UQuery(..),UF(..),UFun(..),Binop(..))
 
 --- Parsers:
 
-sqDef = L.haskellStyle
+sqDef :: L.GenLanguageDef String u IO
+sqDef = T.LanguageDef
         { T.identStart = lower
+        , T.identLetter = alphaNum <|> oneOf "'_"
         , T.opStart = oneOf "<=>∪⊆∈∘"
+        , T.reservedOpNames = []
         , T.opLetter = T.opStart sqDef
-        , T.reservedNames = ["group"]
+        , T.reservedNames = ["group","with"]
+        , T.caseSensitive = True
+        , T.commentLine = "--"
+        , T.commentStart = "{-"
+        , T.commentEnd = "-}"
+        , T.nestedComments = True
         }
 
+lexer :: T.GenTokenParser String u IO
 lexer = T.makeTokenParser sqDef
 
 -- lexer = L.haskell
+
+
+braces :: QParser a -> QParser a
 
 lexeme     = T.lexeme lexer
 identifier = T.identifier lexer
@@ -38,7 +53,9 @@ decimal    = T.decimal lexer
 parens     = T.parens lexer
 commaSep1  = T.commaSep1 lexer
 
-type QParser a = ParsecT String (Maybe UQuery) Identity a
+-- type QParser a = ParsecT String (Maybe UQuery) IO a
+
+type QParser a = ParsecT String (Maybe UQuery) IO a
 
 {-             
 query :: QParser UQuery
@@ -70,7 +87,7 @@ groupby = do
   return $ UGroupBy (UFName f) q
 
 query :: QParser UQuery
-query = whiteSpace *> (set <|> initial <|> groupby <|> aggregation)
+query = whiteSpace *> (set <|> initial <|> groupby <|> with <|> aggregation)
 
 ref :: QParser UQuery
 ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))
@@ -231,3 +248,29 @@ atExpression = reserved "atExpression" *> return UAtExpr
 as :: QParser a -> b -> QParser b
 as p x = do { _ <- p; return x }
 
+def :: QParser UQuery
+def = do
+  f <- identifier
+  args <- many identifier
+  _ <- symbol "="
+  body <- query
+  return $ UFunDef f args body
+
+with :: QParser UQuery
+with = do
+  reserved "with"
+  file <- stringLiteral
+  defs <- parseFile file
+  q <- query
+  return $ UWith defs q
+
+parseFile :: FilePath -> QParser [UQuery]
+parseFile file = do
+  st <- getParserState
+  contents <- liftIO (readFile file)
+  setInput contents
+  let pos = newPos file 1 1
+  setPosition pos
+  defs <- (many def)
+  _ <- setParserState st
+  return defs

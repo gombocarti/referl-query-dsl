@@ -30,6 +30,8 @@ data UQuery
     | UFunExpr UFun
     | UFunComp [UFun]
     | UBind UQuery UF
+    | UFunDef Id [Id] UQuery
+    | UWith [UQuery] UQuery
     | UReturn UQuery
     | UTuple [UQuery]
     | UGroupBy UFun UQuery
