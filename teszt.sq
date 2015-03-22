@@ -1,0 +1,7 @@
+{-
+f m = {f' | f' <- functions m}
+
+g m = {g' | g' <- functions m}
+-}
+
+ms = modules
