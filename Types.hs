@@ -148,6 +148,7 @@ data Typ
     | Unit
     | FunRecursivity
     | FilePath
+    | Infer -- ^ Type should be inferred.
     | A     -- ^ Type variable.
     | B     -- ^ Type variable.
     | Typ :->: Typ  -- ^ Function type.

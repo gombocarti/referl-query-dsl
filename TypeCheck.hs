@@ -1,96 +1,119 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module TypeCheck where
 
 import Data.Maybe (isJust)
+import Control.Monad.State
 import Control.Monad.Error (throwError,catchError)
-import Control.Monad (foldM)
 import Control.Applicative ((<$>))
 import Text.Read (readMaybe)
 import Types
 
-getVar :: TEnv -> Id -> Either String Typ
-getVar env v = case lookup v env of
-                 Just x  -> return x
-                 Nothing -> throwError $ "unbound variable: " ++ v
+getVar :: Id -> QCheck TUQuery
+getVar v = do 
+  env <- get
+  case lookup v env of
+    Just x  -> return x
+    Nothing -> throwError ("undefined variable: " ++ v)
 
-type TEnv = [(Id,Typ)]
+addVar :: Id -> TUQuery -> QCheck ()
+addVar v expr = modify ((v,expr):)
+
+type QCheck a = StateT Namespace (Either String) a
+
+runQCheck :: QCheck a -> Namespace -> Either String (a,Namespace)
+runQCheck q ns = runStateT q ns
+    
+type Namespace = [(Id, TUQuery)]
 
 -- |Type-checks and transforms untyped queries.
-check :: UQuery -> TEnv -> Either String TUQuery
-check (UBind m (UF x body)) e = do
-  m' ::: List tm <- check m e
-  body' ::: List tbody <- check body ((x,tm):e)
+check :: UQuery -> QCheck TUQuery
+check (UBind m (UF x body)) = do
+  m' ::: List tm <- check m
+  addVar x (UVarExpr x ::: tm)
+  body' ::: List tbody <- check body 
   return $ UBind m' (UF x body') ::: List tbody
-check (UReturn x) e = do
-  x' ::: t <- check x e
+check (UReturn x) = do
+  x' ::: t <- check x
   return $ UReturn x' ::: List t
-check (UTuple xs) e = do
-  xs' <- mapM (flip check e) xs
+check (UTuple xs) = do
+  xs' <- mapM check xs
   let (ys,tys) = unzip [(y,ty) | y ::: ty <- xs']
   return $ UTuple ys ::: Tuple tys
-check (UGroupBy (UFName f) q) e = do
-  q' ::: List tq <- check q e
+check (UGroupBy (UFName f) q) = do
+  q' ::: List tq <- check q
   (f',ft) <- getFunType f
   apptype <- typeCheck f ft [tq]
   return $ UGroupBy f' q' ::: Grouped apptype tq
-check (UVarExpr v) e = do
-  tv <- getVar e v  
-  return $ UVarExpr v ::: tv
-check (URef name) e | knownFun name = 
-                        do (f,t) <- getFunType name
-                           return $ UFunRef f ::: t
-                    | otherwise = 
-                        do t <- getVar e name
-                           return $ UVarExpr name ::: t
-check (UDataConst cons) e =
+check (UWith defs q) = do
+  mapM_ check defs
+  q' ::: tq <- check q
+  return $ q' ::: tq
+check (UFunDef f args body) = do
+  checkIsDefined f
+  checkFunDef args body    
+check (URef name) | knownFun name = 
+                      do (f,t) <- getFunType name
+                         return $ UFunRef f ::: t
+                  | otherwise = getVar name
+check (UDataConst cons) =
     case readMaybe cons of 
       Just x -> return $ UExprTypeLit x ::: ExprType
       Nothing -> do
         case readMaybe cons of
           Just x -> return $ UFunRecurLit x ::: FunRecursivity
-          Nothing -> throwError $ "unknown constant: " ++ cons
-check UModules _env = return $ UModules ::: List Mod
-check UFiles _env = return $ UFiles ::: List File
-check UAtFile _env = return $ UAtFile ::: File
-check UAtModule _env = return $ UAtModule ::: Mod
-check UAtFunction _env = return $ UAtFunction ::: Fun
-check UAtExpr _env = return $ UAtExpr ::: Expr
-check (UAppExpr (UFName f) args) env = do
-  targs' <- mapM (flip check env) args
+          Nothing -> throwError $ "unknown literal: " ++ cons
+check UModules = return $ UModules ::: List Mod
+check UFiles = return $ UFiles ::: List File
+check UAtFile = return $ UAtFile ::: File
+check UAtModule = return $ UAtModule ::: Mod
+check UAtFunction = return $ UAtFunction ::: Fun
+check UAtExpr = return $ UAtExpr ::: Expr
+check (UAppExpr (UFName f) args) = do
+  targs' <- mapM check args
   let (args', argtypes') = unzip [(arg, argt) | arg ::: argt <- targs']
   (f', ft) <- checkFun f argtypes'
   return $ (UAppExpr f' args') ::: ft
-check (UFunComp args) env = do
+check (UFunComp args) = do
   (args', types) <- unzip <$> mapM (getFunType . fname) args
   let h:t = reverse types
   compType <- foldM step h t
   return $ UFunComp args' ::: compType
     where
-      step :: Typ -> Typ -> Either ErrMsg Typ
+      step :: Typ -> Typ -> QCheck Typ
       step compType atype = fst <$> compose atype compType []
 
       fname (UFName f) = f
 
-check (URelation op q1 q2) env = do
-  q1' ::: t1 <- check q1 env
-  q2' ::: t2 <- check q2 env
+check (URelation op q1 q2) = do
+  q1' ::: t1 <- check q1
+  q2' ::: t2 <- check q2
   let relType = relationType op
   _ <- typeCheck (show op) relType [t1,t2]
   return $ (URelation op q1' q2') ::: Bool
-check (UGuard p) env = do
-  p' ::: t <- check p env
+check (UGuard p) = do
+  p' ::: t <- check p
   expect Bool t
   return $ UGuard p' ::: List Unit
-check q@(UNumLit _) _env = return $ q ::: Int
-check q@(UStringLit _) _env = return $ q ::: String
+check q@(UNumLit _) = return $ q ::: Int
+check q@(UStringLit _) = return $ q ::: String
 
 -- |Maps function name to tree node, and checks the argument types.
-checkFun :: Id -> [Typ] -> Either String (UFun, Typ)
+checkFun :: Id -> [Typ] -> QCheck (UFun, Typ)
 checkFun f argTypes = do
   (f', fType) <- getFunType f
   resType <- typeCheck f fType argTypes
   return (f', resType)
 
-typeCheck :: Id -> Typ -> [Typ] -> Either String Typ
+checkIsDefined :: Id -> QCheck ()
+checkIsDefined f = do
+  namespace <- get
+  when (isJust . lookup f $ namespace) (throwError ("function already defined: " ++ f))
+
+checkFunDef :: [Id] -> UQuery -> QCheck TUQuery
+checkFunDef args body = check body
+
+typeCheck :: Id -> Typ -> [Typ] -> QCheck Typ
 typeCheck f t args = fst <$> tcheck t args [] 1
     where 
       tcheck (_ :->: _) [] _env _ind = tooFewParams f (countArgs t) (length args)
@@ -127,10 +150,10 @@ typeCheck f t args = fst <$> tcheck t args [] 1
       fArgs (_ :->: b) n = fArgs b (n + 1)
       fArgs _          n = n
 
-tooManyParams :: Id -> Int -> Int -> Either String a
+tooManyParams :: Id -> Int -> Int -> QCheck a
 tooManyParams f expected actual = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")" 
 
-tooFewParams :: Id -> Int -> Int -> Either String a
+tooFewParams :: Id -> Int -> Int -> QCheck a
 tooFewParams f expected actual = throwError $ "too few parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")"
 
 type ErrMsg = String
@@ -138,7 +161,7 @@ type ErrMsg = String
 knownFun :: Id -> Bool
 knownFun name = isJust $ lookup name funtypes
 
-getFunType :: Id -> Either ErrMsg (UFun, Typ)
+getFunType :: Id -> QCheck (UFun, Typ)
 getFunType f = case lookup f funtypes of
                  Just t  -> return t
                  Nothing -> throwError $ "unknown function: " ++ f
@@ -192,34 +215,34 @@ relationType Regexp = String :->: String :->: Bool
 relationType _      = A :->: A :->: Bool
 
 -- |Decides whether the particular type have name function.
-named :: Typ -> Either String ()
+named :: Typ -> QCheck ()
 named t | t `elem` [File,Mod,Fun,Record,RecordField] = return ()
         | otherwise = throwError $ "doesn't have name: " ++ show t
 
 -- |Decides whether the particular type is referencable.
-referencable :: Typ -> Either String ()
+referencable :: Typ -> QCheck ()
 referencable t | t `elem` [Fun,Record,RecordField] = return ()
                | otherwise = throwError $ "not referencable: " ++ show t
                              
-typeable :: Typ -> Either String ()
+typeable :: Typ -> QCheck ()
 typeable t | t `elem` [FunParam,RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
 
-multiline :: Typ -> Either String ()
+multiline :: Typ -> QCheck ()
 multiline t | t `elem` [File,Mod,Fun] = return ()
             | otherwise = throwError $ "can't count line of codes: " ++ show t
 
-multiexpr :: Typ -> Either String ()
+multiexpr :: Typ -> QCheck ()
 multiexpr t | t `elem` [Fun,Expr] = return ()
             | otherwise = throwError $ "doesn't have expressions: " ++ show t
 
-ord :: Typ -> Either String ()
+ord :: Typ -> QCheck ()
 ord t | t `elem` [Int,String,Bool] = return ()
       | otherwise = throwError $ "can't be ordered: " ++ show t
 
 type TypEnv = [(Typ,Typ)]
 
-checkConst :: TypConstraint -> TypEnv -> Either ErrMsg ()
+checkConst :: TypConstraint -> TypEnv -> QCheck ()
 checkConst const env = case const of
                          Named a           -> getTyp a >>= named
                          Referencable a    -> getTyp a >>= referencable
@@ -231,7 +254,7 @@ checkConst const env = case const of
                        Just t  -> return t
                        Nothing -> throwError "constraint error"
 
-compose :: Typ -> Typ -> TypEnv ->  Either ErrMsg (Typ,[(Typ,Typ)])
+compose :: Typ -> Typ -> TypEnv ->  QCheck (Typ,[(Typ,Typ)])
 compose (const :=>: f) g@(a :->: b) env = do
   (t, env') <- compose f g env
   checkConst const env'
@@ -263,7 +286,7 @@ funType _ = False
 typeVar :: Typ -> Bool
 typeVar v = v == A || v == B
 
-expect :: Typ -> Typ -> Either String ()
+expect :: Typ -> Typ -> QCheck ()
 expect (List a) (List b) = expect a b
 expect expected actual 
     | typeVar expected = return ()

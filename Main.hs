@@ -18,8 +18,8 @@ run sq arg = do
   parseResult <- try (runParserT query Nothing "" sq)
   case parseResult of
     Right (Right tree) ->
-        case check tree [] of
-          Right (q ::: _) -> do
+        case runQCheck (check tree) [] of
+          Right (q ::: _, _)-> do
                              db <- initErl "haskell@localhost"
                              x <- runQuery (eval q [] >>= showValue) db arg
                              case x of
