@@ -247,14 +247,6 @@ atExpression = reserved "atExpression" *> return UAtExpr
 as :: QParser a -> b -> QParser b
 as p x = do { _ <- p; return x }
 
-def :: QParser UQuery
-def = do
-  f <- identifier
-  args <- many identifier
-  _ <- symbol "="
-  body <- query
-  return $ UFunDef f args body
-
 with :: QParser UQuery
 with = do
   reserved "with"
@@ -263,6 +255,14 @@ with = do
   q <- query
   return $ UWith defs q
 
+def :: QParser UQuery
+def = do
+  f <- identifier
+  args <- many identifier
+  _ <- symbol "="
+  body <- query
+  return $ UFunDef f args body
+
 parseFile :: FilePath -> QParser [UQuery]
 parseFile file = do
   st <- getParserState
@@ -270,6 +270,6 @@ parseFile file = do
   setInput contents
   let pos = newPos file 1 1
   setPosition pos
-  defs <- (many def)
+  defs <- whiteSpace *> many def
   _ <- setParserState st
   return defs
