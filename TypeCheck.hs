@@ -74,7 +74,7 @@ check UAtExpr = return $ UAtExpr ::: Expr
 check (UAppExpr (UFName f) args) = do
   targs' <- mapM check args
   let (args', argtypes') = unzip [(arg, argt) | arg ::: argt <- targs']
-  (f', ft) <- checkFun f argtypes'
+  (f', ft) <- checkApp f argtypes'
   return $ (UAppExpr f' args') ::: ft
 check (UFunComp args) = do
   (args', types) <- unzip <$> mapM (getFunType . fname) args
@@ -101,8 +101,8 @@ check q@(UNumLit _) = return $ q ::: Int
 check q@(UStringLit _) = return $ q ::: String
 
 -- |Maps function name to tree node, and checks the argument types.
-checkFun :: Id -> [Typ] -> QCheck (UFun, Typ)
-checkFun f argTypes = do
+checkApp :: Id -> [Typ] -> QCheck (UFun, Typ)
+checkApp f argTypes = do
   (f', fType) <- getFunType f
   resType <- typeCheck f fType argTypes
   return (f', resType)
@@ -114,7 +114,10 @@ checkIsDefined f = do
 
 checkFunDef :: Id -> [Id] -> UQuery -> QCheck TUQuery
 checkFunDef f args body = do 
-  body' ::: ftype <- check body
+  namespace <- get
+  forM_ args (\v -> addVar v (UVarExpr v ::: Infer))
+  body' ::: ftype <- check body  
+  put namespace
   return $ UFunDef f args body' ::: ftype
 
 typeCheck :: Id -> Typ -> [Typ] -> QCheck Typ
