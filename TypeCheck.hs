@@ -51,7 +51,9 @@ check (UWith defs q) = do
   return $ q' ::: tq
 check (UFunDef f args body) = do
   checkIsDefined f
-  checkFunDef args body    
+  ftype <- checkFunDef f args body    
+  addVar f ftype
+  return ftype
 check (URef name) | knownFun name = 
                       do (f,t) <- getFunType name
                          return $ UFunRef f ::: t
@@ -110,8 +112,10 @@ checkIsDefined f = do
   namespace <- get
   when (isJust . lookup f $ namespace) (throwError ("function already defined: " ++ f))
 
-checkFunDef :: [Id] -> UQuery -> QCheck TUQuery
-checkFunDef args body = check body
+checkFunDef :: Id -> [Id] -> UQuery -> QCheck TUQuery
+checkFunDef f args body = do 
+  body' ::: ftype <- check body
+  return $ UFunDef f args body' ::: ftype
 
 typeCheck :: Id -> Typ -> [Typ] -> QCheck Typ
 typeCheck f t args = fst <$> tcheck t args [] 1
