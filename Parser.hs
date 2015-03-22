@@ -17,7 +17,7 @@ import Types (UQuery(..),UF(..),UFun(..),Binop(..))
 
 --- Parsers:
 
-sqDef :: L.GenLanguageDef String u IO
+sqDef :: Monad m => L.GenLanguageDef String u m
 sqDef = T.LanguageDef
         { T.identStart = lower
         , T.identLetter = alphaNum <|> oneOf "'_"
@@ -32,11 +32,10 @@ sqDef = T.LanguageDef
         , T.nestedComments = True
         }
 
-lexer :: T.GenTokenParser String u IO
+lexer :: Monad m => T.GenTokenParser String u m
 lexer = T.makeTokenParser sqDef
 
 -- lexer = L.haskell
-
 
 braces :: QParser a -> QParser a
 
