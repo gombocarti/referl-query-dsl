@@ -394,10 +394,28 @@ nameField = DRF { fieldName = "name"
                 }
 
 stringType :: DbType
-stringType = DT { tname = "string" }
+stringType = emptyType { tname = "string" }
 
 intType :: DbType
-intType = DT { tname = "int" }
+intType = emptyType { tname = "int"
+                    , tbuiltin = True
+                    }
+
+emptyType :: DbType
+emptyType = 
+    DT 
+    { tname = ""
+    , tarity = 0
+    , texported = False
+    , topaque = False
+    , tbuiltin = False
+    , tfile = []
+    , targuments = []
+    , tsubtypes = []
+    , tspecReferences = []
+    , tparameterReferences = []
+    }
+              
 
 ageField :: DbRecordField
 ageField = DRF { fieldName = "age"
