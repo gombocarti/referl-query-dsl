@@ -51,8 +51,6 @@ decimal    = T.decimal lexer
 parens     = T.parens lexer
 commaSep1  = T.commaSep1 lexer
 
--- type QParser a = ParsecT String (Maybe UQuery) IO a
-
 type QParser a = ParsecT String (Maybe UQuery) IO a
 
 {-             
@@ -71,11 +69,13 @@ set = braces q <?> "query"
             putState x
             return b
 
+{-
 aggregation :: QParser UQuery
 aggregation = do
   f <- identifier
   q <- set
   return $ UAppExpr (UFName f) [q]
+-}
 
 groupby :: QParser UQuery
 groupby = do
@@ -85,7 +85,7 @@ groupby = do
   return $ UGroupBy (UFName f) q
 
 query :: QParser UQuery
-query = whiteSpace *> (set <|> initial <|> groupby <|> with <|> aggregation)
+query = whiteSpace *> (set <|> initial <|> groupby <|> with <|> app)
 
 ref :: QParser UQuery
 ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))
@@ -153,7 +153,7 @@ bindop :: QParser String
 bindop = symbol "<-"
 
 bindable :: QParser UQuery
-bindable = initial <|> union <|> set <|> app
+bindable = initial <|> union <|> set <|> app <|> ref
 
 following :: QParser UQuery
 following = do q <-  optionMaybe (comma *> (bind <|> filter))
