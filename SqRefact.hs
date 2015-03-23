@@ -36,6 +36,7 @@ data Value
     | Seq [Value]
     | Grouped [(Value,Value)]
     | Tuple [Id] [Value]
+    | FunDef UQuery
       deriving (Show,Eq)
 
 instance Ord Value where
@@ -126,7 +127,7 @@ eval (UGroupBy f q) env = do
       group xs = map merge (groupBy criteria xs)
       criteria = (==) `on` fst
       merge xs = (fst . head $ xs, Seq (map snd xs))
-eval (UVarExpr v) env = return $ readVar v env
+eval (UVarExpr v) env = readVar v env
 {-
 eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
     where f      = makeFun fs
@@ -141,6 +142,14 @@ eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 --eval (UAppExpr UChainN [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 --    where f = makeFun fs
 -}
+eval (UFunDef _ [] body) env = eval body env     
+eval (UWith defs q) env = eval q (funs ++ env)
+    where
+      funs = [(f, FunDef def) | def@(UFunDef f _ _) <- defs]
+eval (UAppExpr (UFName f) args) env = do
+  args' <- mapM (flip eval env) args
+  FunDef funDef <- readVar f env
+  evalFunDef funDef args' env
 eval (UAppExpr f args) env = do
   args' <- mapM (flip eval env) args
   evalApp f args'
@@ -266,10 +275,10 @@ concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
     where step (Seq xs) acc = xs ++ acc
 
-readVar :: Id -> Env -> Value
+readVar :: Id -> Env -> Query Value
 readVar v env = case lookup v env of
-                  Just x  -> x
-                  Nothing -> error $ "undefined variable: " ++ v
+                  Just x  -> return x
+                  Nothing -> throwError $ "undefined variable: " ++ v
 
 evalApp :: UFun -> [Value] -> Query Value
 evalApp UName [arg] = 
@@ -280,7 +289,7 @@ evalApp UName [arg] =
       Rec r      -> propertyDb String lib_record "name" r
       TypeExpr t -> propertyDb String lib_typeExp "name" t
       Type t     -> propertyDb String lib_type "name" t
--- TODO mit ad vissza a returntypes refactorerlben?
+-- TODO mit ad vissza a returntypes refactorerlben? (type vagy typeexpr?)
 evalApp UArity [Fun f] = propertyDb Int lib_function "arity" f
 evalApp ULoc [arg]   = propertyDb Int metrics "metric" args
     where 
@@ -308,7 +317,6 @@ evalApp UDir f = do
 evalApp UFileName f = do
   String path <- evalApp UPath f
   return . String . takeFileName $ path
-
 {-
 evalApp UTypeOf [arg] = 
     case arg of 
@@ -355,6 +363,10 @@ evalApp UAverage [Seq xs] = seq . map Int . Sq.average $ ns
     where ns = [n | Int n <- xs]
 evalApp ULength [Chain c] = int . length . getChain $ c
 evalApp UDistinct [Chain c] = chain $ fChain nub c
+
+evalFunDef (UFunDef _ argNames body) params env =
+    eval body (zip argNames params ++ env)
+
 
 int :: Int -> Query Value
 int = return . Int
