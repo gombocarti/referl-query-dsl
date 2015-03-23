@@ -21,6 +21,16 @@ getType v = do
   _ ::: t <- getVar v
   return t
 
+setType :: Id -> Typ -> QCheck ()
+setType v t = do
+  namespace <- get
+  let namespace' = update namespace
+  put namespace'
+    where update [] = []
+          update ((x, q ::: tq):xs)
+              | x == v    = (x,q ::: t):xs
+              | otherwise = update xs
+
 addVar :: Id -> TUQuery -> QCheck ()
 addVar v expr = modify ((v,expr):)
 
@@ -63,6 +73,7 @@ check (URef name) | knownFun name =
                       do (f,t) <- getFunType name
                          return $ UFunRef f ::: t
                   | otherwise = getVar name
+check (UVarExpr v) = getVar v
 check (UDataConst cons) =
     case readMaybe cons of 
       Just x -> return $ UExprTypeLit x ::: ExprType
@@ -120,7 +131,7 @@ checkIsDefined f = do
 checkFunDef :: Id -> [Id] -> UQuery -> QCheck TUQuery
 checkFunDef f args body = do 
   namespace <- get
-  forM_ args (\v -> addVar v (UVarExpr v ::: Infer))
+  forM_ args (\v -> addVar v (UVarExpr v ::: (Infer v)))
   body' ::: bodyType <- check body
   argTypes <- forM args getType
   let ftype = makeFunType argTypes bodyType
@@ -130,9 +141,12 @@ checkFunDef f args body = do
 makeFunType :: [Typ] -> Typ -> Typ
 makeFunType args bodyt = foldr (:->:) bodyt args
 
+type TEnv = [(Typ,Typ)]
+
 typeCheck :: Id -> Typ -> [Typ] -> QCheck Typ
 typeCheck f t args = fst <$> tcheck t args [] 1
-    where 
+    where
+      tcheck :: Typ -> [Typ] -> TEnv-> Int -> QCheck (Typ,TEnv)
       tcheck (_ :->: _) [] _env _ind =
           tooFewParams f (countArgs t) (length args)
       tcheck (a :->: b) (x:xs) env ind = do
@@ -153,15 +167,19 @@ typeCheck f t args = fst <$> tcheck t args [] 1
                           Nothing -> return (a,env)
           | otherwise = return (a,env)
 
+      unify :: Typ -> Typ -> TEnv -> Int -> QCheck TEnv
       unify t1@(a :->: b) t2@(c :->: d) env ind =
           catchError (do
             env' <- unify a c env ind
             unify b d env' ind)
           (\_ -> throwError $ errorMsg t1 t2 ind)
       unify (List a) (List b) env ind = unify a b env ind
+      unify a (Infer v) env _ind = do 
+        setType v a 
+        return env
       unify a b  env ind
           | typeVar a  = case lookup a env of 
-                           Just t -> unify t b env ind
+                           Just at -> unify at b env ind
                            Nothing ->  return $ (a,b):env
           | a == b     = return env
           | otherwise  = throwError $ errorMsg a b ind
@@ -191,7 +209,7 @@ getFunType f = case lookup f funtypes of
                  Nothing -> do 
                    namespace <- get
                    case lookup f namespace of
-                     Just (UFunDef _ _ _ ::: ftype) -> return (UFName f, ftype)
+                     Just (UFunDef _ _ _ ::: ftype) -> return (UFName f, ftype) -- TODO: eval UFName
                      _ -> throwError $ "unknown function: " ++ f
 
 -- |Associates function name with ast node and function which checks argument types.
