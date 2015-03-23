@@ -8,6 +8,8 @@ import Text.Parsec (runParserT)
 import Control.Monad.Reader
 import Control.Monad.Error
 import System.Environment (getArgs, getProgName)
+import System.Directory (getHomeDirectory)
+import System.FilePath ((</>))
 import Control.Exception (try, SomeException)
 
 runQuery :: Query a ->  Database -> Maybe Arg -> IO (Either String a)
@@ -39,9 +41,12 @@ main :: IO ()
 main = do
   a <- getArgs
   case a of
-    [s]          -> run s Nothing
-    [s,file,pos] -> run s (Just (file,read pos))
-    _            -> do 
+    [s]                  -> run s Nothing
+    [s,'~':'/':file,pos] -> do 
+           home <- getHomeDirectory
+           run s (Just (home </> file,read pos))
+    [s,file,pos]         -> run s (Just (file,read pos))
+    _                    -> do 
            name <- getProgName 
            putStrLn ("usage: " ++ name ++ " query")
 
