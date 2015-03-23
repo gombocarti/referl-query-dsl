@@ -66,13 +66,18 @@ check (UWith defs q) = do
   return $ q' ::: tq
 check (UFunDef f args body) = do
   checkIsDefined f
-  ftype <- checkFunDef f args body    
-  addVar f ftype
-  return ftype
-check (URef name) | knownFun name = 
-                      do (f,t) <- getFunType name
-                         return $ UFunRef f ::: t
-                  | otherwise = getVar name
+  fundef <- checkFunDef f args body    
+  addVar f fundef
+  return fundef
+check (URef name)
+    | knownFun name = 
+        do (f,t) <- getFunType name
+           return $ UFunRef f ::: t
+    | otherwise = 
+        do v <- getVar name
+           case v of 
+             (UFunDef _ _ _ ::: t) -> return (URef name ::: t)
+             _ -> return v
 check (UVarExpr v) = getVar v
 check (UDataConst cons) =
     case readMaybe cons of 
