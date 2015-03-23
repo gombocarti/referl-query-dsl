@@ -139,7 +139,10 @@ checkFunDef f args body = do
   return $ UFunDef f args body' ::: ftype
 
 makeFunType :: [Typ] -> Typ -> Typ
-makeFunType args bodyt = foldr (:->:) bodyt args
+makeFunType args bodyt = let (cs, ftype) = foldr step ([],bodyt) args
+                         in foldr (:=>:) ftype cs
+    where step (c :=>: a) (cs, acc) = (c:cs, a :->: acc)
+          step arg (cs,acc)         = (cs, arg :->: acc)
 
 type TEnv = [(Typ,Typ)]
 
@@ -174,9 +177,11 @@ typeCheck f t args = fst <$> tcheck t args [] 1
             unify b d env' ind)
           (\_ -> throwError $ errorMsg t1 t2 ind)
       unify (List a) (List b) env ind = unify a b env ind
-      unify a (Infer v) env _ind = do 
-        setType v a 
-        return env
+      unify a (Infer v) env ind = do 
+        setType v (argType t ind)
+        if typeVar a
+        then return ((a,Infer v):env)
+        else return env
       unify a b  env ind
           | typeVar a  = case lookup a env of 
                            Just at -> unify at b env ind
@@ -191,6 +196,23 @@ typeCheck f t args = fst <$> tcheck t args [] 1
       fArgs (_ :=>: b) n = fArgs b n
       fArgs (_ :->: b) n = fArgs b (n + 1)
       fArgs _          n = n
+
+argType :: Typ -> Int -> Typ
+argType (a :->: _) 1 = a
+argType (_ :->: b) n = argType b (n - 1)
+argType (Named a :=>: b) n = if t == a then Named a :=>: a else t
+    where t = argType b n
+argType (Referencable a :=>: b) n = if t == a then Referencable a :=>: a else t
+    where t = argType b n
+argType (Typeable a :=>: b) n = if t == a then Typeable a :=>: a else t
+    where t = argType b n
+argType (MultiLine a :=>: b) n = if t == a then MultiLine a :=>: a else t
+    where t = argType b n
+argType (MultiExpression a :=>: b) n = if t == a then MultiExpression a :=>: a else t
+    where t = argType b n
+argType (Ord a :=>: b) n = if t == a then Ord a :=>: a else t
+    where t = argType b n
+argType a _ = error ("argType: not function type: " ++ show a)
 
 tooManyParams :: Id -> Int -> Int -> QCheck a
 tooManyParams f expected actual = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")" 
@@ -262,34 +284,40 @@ relationType _      = A :->: A :->: Bool
 
 -- |Decides whether the particular type have name function.
 named :: Typ -> QCheck ()
+named (Infer _) = return ()
 named t | t `elem` [File,Mod,Fun,Record,RecordField] = return ()
         | otherwise = throwError $ "doesn't have name: " ++ show t
 
 -- |Decides whether the particular type is referencable.
 referencable :: Typ -> QCheck ()
+referencable (Infer _) = return ()
 referencable t | t `elem` [Fun,Record,RecordField] = return ()
                | otherwise = throwError $ "not referencable: " ++ show t
                              
 typeable :: Typ -> QCheck ()
+typeable (Infer _) = return ()
 typeable t | t `elem` [FunParam,RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
 
 multiline :: Typ -> QCheck ()
+multiline (Infer _) = return ()
 multiline t | t `elem` [File,Mod,Fun] = return ()
             | otherwise = throwError $ "can't count line of codes: " ++ show t
 
 multiexpr :: Typ -> QCheck ()
+multiexpr (Infer _) = return ()
 multiexpr t | t `elem` [Fun,Expr] = return ()
             | otherwise = throwError $ "doesn't have expressions: " ++ show t
 
 ord :: Typ -> QCheck ()
+ord (Infer _) = return ()
 ord t | t `elem` [Int,String,Bool] = return ()
       | otherwise = throwError $ "can't be ordered: " ++ show t
 
 type TypEnv = [(Typ,Typ)]
 
 checkConst :: TypConstraint -> TypEnv -> QCheck ()
-checkConst const env = case const of
+checkConst constr env = case constr of
                          Named a           -> getTyp a >>= named
                          Referencable a    -> getTyp a >>= referencable
                          Typeable a        -> getTyp a >>= typeable
@@ -319,11 +347,12 @@ resultType (_ :=>: b) = resultType b
 resultType (_ :->: b) = resultType b
 resultType b = b
 -}
+{-
 argType :: Typ -> Typ
 argType (c :=>: b) = c :=>: argType b
 argType (a :->: b) | funType b = a :->: argType b
                    | otherwise = a
-
+-}
 funType :: Typ -> Bool
 funType (_ :=>: b) = funType b
 funType (_ :->: _) = True
