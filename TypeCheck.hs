@@ -16,6 +16,11 @@ getVar v = do
     Just x  -> return x
     Nothing -> throwError ("undefined variable: " ++ v)
 
+getType :: Id -> QCheck Typ
+getType v = do
+  _ ::: t <- getVar v
+  return t
+
 addVar :: Id -> TUQuery -> QCheck ()
 addVar v expr = modify ((v,expr):)
 
@@ -116,26 +121,37 @@ checkFunDef :: Id -> [Id] -> UQuery -> QCheck TUQuery
 checkFunDef f args body = do 
   namespace <- get
   forM_ args (\v -> addVar v (UVarExpr v ::: Infer))
-  body' ::: ftype <- check body  
+  body' ::: bodyType <- check body
+  argTypes <- forM args getType
+  let ftype = makeFunType argTypes bodyType
   put namespace
   return $ UFunDef f args body' ::: ftype
+
+makeFunType :: [Typ] -> Typ -> Typ
+makeFunType args bodyt = foldr (:->:) bodyt args
 
 typeCheck :: Id -> Typ -> [Typ] -> QCheck Typ
 typeCheck f t args = fst <$> tcheck t args [] 1
     where 
-      tcheck (_ :->: _) [] _env _ind = tooFewParams f (countArgs t) (length args)
-      tcheck (a :->: b) (x:xs) env ind = do env' <- unify a x env ind
-                                            tcheck b xs env' (ind + 1)
-      tcheck (const :=>: a) args env ind = do res@(_,env') <- tcheck a args env ind
-                                              checkConst const env'
-                                              return res
-      tcheck _ (_:_) env _ind = tooManyParams f (countArgs t) (length args)
-      tcheck (List a) [] env ind = do (resT, _) <- tcheck a [] env ind
-                                      return (List resT, env)
-      tcheck a [] env _ind | typeVar a = case lookup a env of
-                                           Just b -> return (b,env)
-                                           Nothing -> return (a,env)
-                           | otherwise = return (a,env)
+      tcheck (_ :->: _) [] _env _ind =
+          tooFewParams f (countArgs t) (length args)
+      tcheck (a :->: b) (x:xs) env ind = do
+        env' <- unify a x env ind
+        tcheck b xs env' (ind + 1)
+      tcheck (const :=>: a) args env ind = do
+        res@(_,env') <- tcheck a args env ind
+        checkConst const env'
+        return res
+      tcheck _ (_:_) env _ind = 
+          tooManyParams f (countArgs t) (length args)
+      tcheck (List a) [] env ind = do
+        (resT, _) <- tcheck a [] env ind
+        return (List resT, env)
+      tcheck a [] env _ind
+          | typeVar a = case lookup a env of
+                          Just b -> return (b,env)
+                          Nothing -> return (a,env)
+          | otherwise = return (a,env)
 
       unify t1@(a :->: b) t2@(c :->: d) env ind =
           catchError (do
@@ -143,11 +159,12 @@ typeCheck f t args = fst <$> tcheck t args [] 1
             unify b d env' ind)
           (\_ -> throwError $ errorMsg t1 t2 ind)
       unify (List a) (List b) env ind = unify a b env ind
-      unify a b  env ind | typeVar a  = case lookup a env of 
-                                          Just t -> unify t b env ind
-                                          Nothing ->  return $ (a,b):env
-                         | a == b     = return env
-                         | otherwise  = throwError $ errorMsg a b ind
+      unify a b  env ind
+          | typeVar a  = case lookup a env of 
+                           Just t -> unify t b env ind
+                           Nothing ->  return $ (a,b):env
+          | a == b     = return env
+          | otherwise  = throwError $ errorMsg a b ind
 
       errorMsg e a ind = "type error: expected: " ++ show e ++ " actual: " ++ show a ++ "\nat the " ++ show ind ++ ". argument of " ++ f
 
@@ -171,7 +188,11 @@ knownFun name = isJust $ lookup name funtypes
 getFunType :: Id -> QCheck (UFun, Typ)
 getFunType f = case lookup f funtypes of
                  Just t  -> return t
-                 Nothing -> throwError $ "unknown function: " ++ f
+                 Nothing -> do 
+                   namespace <- get
+                   case lookup f namespace of
+                     Just (UFunDef _ _ _ ::: ftype) -> return (UFName f, ftype)
+                     _ -> throwError $ "unknown function: " ++ f
 
 -- |Associates function name with ast node and function which checks argument types.
 funtypes :: [(Id, (UFun, Typ))]
