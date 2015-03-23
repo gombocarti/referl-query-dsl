@@ -11,7 +11,6 @@ import Control.Monad.Identity
 import Control.Monad.IO.Class (liftIO)
 import Prelude hiding (filter)
 import Data.Maybe (fromJust)
-import qualified Control.Exception as E (try, SomeException)
 
 import Types (UQuery(..),UF(..),UFun(..),Binop(..))
 
