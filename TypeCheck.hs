@@ -61,9 +61,10 @@ check (UGroupBy (UFName f) q) = do
   apptype <- typeCheck f ft [tq]
   return $ UGroupBy f' q' ::: Grouped apptype tq
 check (UWith defs q) = do
-  mapM_ check defs
+  defs' <- mapM check defs
+  let (ds,tds) = unzip [(d,td) | d ::: td <- defs']
   q' ::: tq <- check q
-  return $ q' ::: tq
+  return $ UWith ds q' ::: tq
 check (UFunDef f args body) = do
   checkIsDefined f
   fundef <- checkFunDef f args body    
@@ -75,9 +76,10 @@ check (URef name)
            return $ UFunRef f ::: t
     | otherwise = 
         do v <- getVar name
-           case v of 
-             (UFunDef _ _ _ ::: t) -> return (URef name ::: t)
-             _ -> return v
+           return v
+--           case v of 
+--             (UFunDef _ _ _ ::: t) -> return (URef name ::: t)
+--             _ -> return v
 check (UVarExpr v) = getVar v
 check (UDataConst cons) =
     case readMaybe cons of 
