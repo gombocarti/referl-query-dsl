@@ -42,10 +42,10 @@ main = do
   a <- getArgs
   case a of
     [s]                  -> run s Nothing
-    [s,'~':'/':file,pos] -> do 
+    [s,'~':'/':path,pos] -> do 
            home <- getHomeDirectory
-           run s (Just (home </> file,read pos))
-    [s,file,pos]         -> run s (Just (file,read pos))
+           run s (Just (home </> path,read pos))
+    [s,path,pos]         -> run s (Just (path,read pos))
     _                    -> do 
            name <- getProgName 
            putStrLn ("usage: " ++ name ++ " query")
