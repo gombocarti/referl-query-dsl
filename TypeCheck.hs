@@ -49,7 +49,7 @@ check (UBind m (UF x body)) = do
   body' ::: List tbody <- check body 
   return $ UBind m' (UF x body') ::: List tbody
 check (UReturn x) = do
-  x' ::: t <- check x
+  x' ::: t <- check x -- todo: handle Infer types
   return $ UReturn x' ::: List t
 check (UTuple xs) = do
   xs' <- mapM check xs
