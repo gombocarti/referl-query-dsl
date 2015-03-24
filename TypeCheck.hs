@@ -27,9 +27,9 @@ setType v t = do
   let namespace' = update namespace
   put namespace'
     where update [] = []
-          update ((x, q ::: tq):xs)
+          update (e@(x, q ::: _):xs)
               | x == v    = (x,q ::: t):xs
-              | otherwise = update xs
+              | otherwise = e : update xs
 
 addVar :: Id -> TUQuery -> QCheck ()
 addVar v expr = modify ((v,expr):)
