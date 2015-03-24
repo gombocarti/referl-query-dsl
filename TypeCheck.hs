@@ -184,11 +184,14 @@ typeCheck f t args = fst <$> tcheck t args [] 1
             unify b d env' ind)
           (\_ -> throwError $ errorMsg t1 t2 ind)
       unify (List a) (List b) env ind = unify a b env ind
-      unify a (Infer v) env ind = do 
-        setType v (argType t ind)
-        if typeVar a
-        then return ((a,Infer v):env)
-        else return env
+      unify a (Infer v) env ind 
+          | typeVar a = do let tv = case lookup a env of
+                                      Just ta  -> ta
+                                      Nothing  -> argType t ind
+                           setType v tv
+                           return env
+          | otherwise = do setType v a
+                           return env                 
       unify a b  env ind
           | typeVar a  = case lookup a env of 
                            Just at -> unify at b env ind
