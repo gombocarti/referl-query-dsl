@@ -5,3 +5,18 @@ g m = {g' | g' <- functions m}
 -}
 
 ms = modules
+
+-- funs m = functions m
+-- nm m = {m | m1 <- modules, name m1 == "korte", f <- functions m1} todo: fix typecheck
+
+-- funs m = {f | m1 <- modules, name m1 == m, f <- functions m} -- fix err msg
+
+-- funs m = {f | m1 <- modules, name m1 == m, f <- functions m1} -- fix undefined var
+
+funs m = {m | m1 <- modules, name m1 == m} -- fix type ( A -> List A, instead of String -> List String )
+
+--fix type : (Infer "m" -> List (Infer "m"))
+funs m = {m | m1 <- modules} 
+
+-- todo: more verbose type errors : indicate file, function etc
+
