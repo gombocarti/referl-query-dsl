@@ -73,7 +73,6 @@ check (UFunDef f args body) = do
 check q@(URef name) = do
   t <- getType name
   return (q ::: t)
---check (UVarExpr v) = getVar v
 check (UDataConst cons) =
     case readMaybe cons of 
       Just x -> return $ UExprTypeLit x ::: ExprType
