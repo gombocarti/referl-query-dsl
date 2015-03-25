@@ -11,7 +11,7 @@ import Control.Monad.IO.Class (liftIO)
 import Prelude hiding (filter)
 import Data.Maybe (fromJust)
 
-import Types (UQuery(..),UF(..),UFun(..),Binop(..))
+import Types (Id, UQuery(..),UF(..),Binop(..))
 
 --- Parsers:
 
@@ -81,7 +81,7 @@ groupby = do
   try $ reserved "group"
   f <- identifier
   q <- set
-  return $ UGroupBy (UFName f) q
+  return $ UGroupBy f q
 
 query :: QParser UQuery
 query = whiteSpace *> (set <|> initial <|> groupby <|> with <|> app <|> ref)
@@ -101,7 +101,7 @@ app = parens app
       <|>
       try (do f <- identifier
               args <- many1 (argument <|> parens argument)
-              return (UAppExpr (UFName f) args))
+              return (UAppExpr f args))
               <* whiteSpace
       <?> "function application"
           where argument = numLit <|> stringLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> set
@@ -111,7 +111,7 @@ infixSetOp op =
     do
       as <- try $ (set <|> initial <|> app <|> ref) <* reservedOp op
       bs <- set <|> initial <|> app
-      return $ UAppExpr (UFName op) [as,bs]
+      return $ UAppExpr op [as,bs]
     <|> parens (infixSetOp op)
 
 union :: QParser UQuery
@@ -123,8 +123,8 @@ subset = infixSetOp "⊆" <?> "subset of"
 element :: QParser UQuery
 element = infixSetOp "∈" <?> "element of"
 
-funref :: QParser UFun
-funref = UFName <$> name <?> "function reference"
+funref :: QParser Id
+funref = name <?> "function reference"
 
 name :: QParser String
 name = do

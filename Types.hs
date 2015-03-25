@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs #-}
 module Types where
+import Data.List (intercalate)
 
 import qualified Sq (DbModule, DbFunction, Named, ExprType, DbFunctionType)
 
@@ -26,19 +27,19 @@ data TF a where
 
 -- |Untyped syntax tree type for queries.
 data UQuery
-    = UAppExpr UFun [UQuery]
-    | UFunExpr UFun
-    | UFunComp [UFun]
+    = UAppExpr Id [UQuery]
+    | UFunExpr Id
+    | UFunComp [Id]
     | UBind UQuery UF
     | UFunDef Id [Id] UQuery
     | UWith [UQuery] UQuery
     | UReturn UQuery
     | UTuple [UQuery]
-    | UGroupBy UFun UQuery
+    | UGroupBy Id UQuery
     | UVarExpr Id
     | UGuard UQuery
     | URelation Binop UQuery UQuery
-    | UFunRef UFun
+--    | UFunRef Id
     | URef Id
     | UDataConst Id
     | UStringLit String
@@ -53,8 +54,9 @@ data UQuery
     | UAtExpr
       deriving (Show,Eq)
 
-data TUQuery = UQuery ::: Typ deriving Show
+data TUQuery = UQuery ::: Typ
 
+{-
 -- |Applicable functions of the query language.
 data UFun
     = UFunctions -- ^ Functions of a module.
@@ -109,6 +111,7 @@ data UFun
     | ULength
     | UDistinct
       deriving (Show, Eq)
+-}
 
 -- |Untyped function.
 data UF = UF Id UQuery
@@ -122,7 +125,7 @@ data Binop
     | Gt
     | Gte
     | Regexp
-      deriving (Show,Eq)
+      deriving Eq
 
 -- |Types of the query language.
 data Typ
@@ -148,12 +151,10 @@ data Typ
     | Unit
     | FunRecursivity
     | FilePath
-    | TV Char Id -- ^ Generated type variable.
-    | A     -- ^ Type variable.
-    | B     -- ^ Type variable.
-    | Typ :->: Typ  -- ^ Function type.
+    | TV Char                -- ^ Type variable.
+    | Typ :->: Typ           -- ^ Function type.
     | TypConstraint :=>: Typ -- ^ Type constraint.
-      deriving (Show,Eq)
+      deriving Eq
 
 data TypConstraint 
     = Named Typ
@@ -164,5 +165,42 @@ data TypConstraint
     | Ord Typ
       deriving (Show,Eq)
 
-infixr 4 :->:
-infixr 3 :=>:
+infixr 2 :->:
+infixr 1 :=>:
+
+-- Show instances.
+
+instance Show Binop where
+    show Eq     = "=="
+    show NEq    = "/="
+    show Lt     = "<"
+    show Lte    = "<="
+    show Gt     = ">"
+    show Gte    = ">="
+    show Regexp = "=~"
+
+instance Show Typ where
+    show (TV c)   = [c]
+    show (List t) = "[" ++ show t ++ "]"
+    show (Chain t) = "Chain " ++ show t
+    show (Tuple components) = "(" ++ intercalate "," (map show components) ++ ")"
+    show (constr :=>: t) = show constr ++ " => " ++ show t
+    show (f@(_ :->: _) :->: b) = "(" ++ show f ++ ") -> " ++ show b
+    show (a :->: b) = show a ++ " -> " ++ show b
+    show File = "File"
+    show Mod = "Module"
+    show Fun = "Function"
+    show Expr = "Expression"
+    show Record = "Record"
+    show RecordField = "RecordField"
+    show FunRecursivity = "FunRecursivity"
+    show Type = "Type"
+    show FunParam = "FunParam"
+    show ExprType = "ExprType"
+    show String = "String"
+    show Int = "Int"
+    show Bool = "Bool"
+    show FilePath = "FilePath"
+
+instance Show TUQuery where
+    show (q ::: t) = show q ++ " :: " ++ show t
