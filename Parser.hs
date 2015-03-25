@@ -104,7 +104,7 @@ app = parens app
               return (UAppExpr (UFName f) args))
               <* whiteSpace
       <?> "function application"
-          where argument = numLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> set
+          where argument = numLit <|> stringLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> set
 
 infixSetOp :: String -> QParser UQuery
 infixSetOp op = 
