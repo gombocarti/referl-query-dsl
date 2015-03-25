@@ -424,7 +424,8 @@ showTuples :: [Value] -> Query String
 showTuples ts@((Tuple components _):_) = do
   let header = map show components
   lines <- mapM showLine ts
-  let colWidths = colWidth lines (replicate (length header) 0)
+  let defaultWidth = map ((+2) . length) header
+      colWidths = colWidth lines defaultWidth
       ids'   = intercalate "|" $ zipWith padLabel header colWidths
       lines' = unlines $ map (flip padLine colWidths) lines
       sep    = replicate (sum colWidths) '-'
