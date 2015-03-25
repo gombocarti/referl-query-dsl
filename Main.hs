@@ -21,7 +21,7 @@ run sq arg = do
   parseResult <- try (runParserT query Nothing "" sq)
   case parseResult of
     Right (Right tree) ->
-        case runQCheck (check tree) [] of
+        case runQCheck (check tree) funtypes of
           Right ((q ::: _, _), warnings)-> 
               do
                 when (warnings /= []) 
