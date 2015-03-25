@@ -4,6 +4,7 @@ module TypeCheck where
 
 import Data.Maybe (isJust)
 import Control.Monad.State
+import Control.Monad.Writer
 import Control.Monad.Error (throwError,catchError)
 import Control.Applicative ((<$>))
 import Text.Read (readMaybe)
@@ -34,10 +35,10 @@ setType v t = do
 addVar :: Id -> TUQuery -> QCheck ()
 addVar v expr = modify ((v,expr):)
 
-type QCheck a = StateT Namespace (Either String) a
+type QCheck a = StateT Namespace (WriterT [String] (Either String)) a
 
-runQCheck :: QCheck a -> Namespace -> Either String (a,Namespace)
-runQCheck q ns = runStateT q ns
+runQCheck :: QCheck a -> Namespace -> Either String ((a,Namespace),[String])
+runQCheck q ns = runWriterT (runStateT q ns)
     
 type Namespace = [(Id, TUQuery)]
 
@@ -49,7 +50,7 @@ check (UBind m (UF x body)) = do
   body' ::: List tbody <- check body 
   return $ UBind m' (UF x body') ::: List tbody
 check (UReturn x) = do
-  x' ::: t <- check x -- todo: handle Infer types
+  x' ::: t <- check x
   return $ UReturn x' ::: List t
 check (UTuple xs) = do
   xs' <- mapM check xs
@@ -62,7 +63,7 @@ check (UGroupBy (UFName f) q) = do
   return $ UGroupBy f' q' ::: Grouped apptype tq
 check (UWith defs q) = do
   defs' <- mapM check defs
-  let (ds,tds) = unzip [(d,td) | d ::: td <- defs']
+  let ds = [d | d ::: _ <- defs']
   q' ::: tq <- check q
   return $ UWith ds q' ::: tq
 check (UFunDef f args body) = do
@@ -133,12 +134,13 @@ checkApp f argTypes = do
 checkIsDefined :: Id -> QCheck ()
 checkIsDefined f = do
   namespace <- get
-  when (isJust . lookup f $ namespace) (throwError ("function already defined: " ++ f))
+  when (isJust . lookup f $ namespace)
+           (throwError ("function already defined: " ++ f))
 
 checkFunDef :: Id -> [Id] -> UQuery -> QCheck TUQuery
 checkFunDef f args body = do 
   namespace <- get
-  forM_ args (\v -> addVar v (UVarExpr v ::: (Infer v)))
+  zipWithM_ (\arg c -> addVar arg (UVarExpr arg ::: TV c arg)) args ['a'..]
   body' ::: bodyType <- check body
   argTypes <- forM args getType
   let ftype = makeFunType argTypes bodyType
@@ -162,11 +164,11 @@ typeCheck f t args = fst <$> tcheck t args [] 1
       tcheck (a :->: b) (x:xs) env ind = do
         env' <- unify a x env ind
         tcheck b xs env' (ind + 1)
-      tcheck (const :=>: a) args env ind = do
+      tcheck (constr :=>: a) args env ind = do
         res@(_,env') <- tcheck a args env ind
-        checkConst const env'
+        checkConst constr env'
         return res
-      tcheck _ (_:_) env _ind = 
+      tcheck _ (_:_) _env _ind = 
           tooManyParams f (countArgs t) (length args)
       tcheck (List a) [] env ind = do
         (resT, _) <- tcheck a [] env ind
@@ -184,22 +186,32 @@ typeCheck f t args = fst <$> tcheck t args [] 1
             unify b d env' ind)
           (\_ -> throwError $ errorMsg t1 t2 ind)
       unify (List a) (List b) env ind = unify a b env ind
-      unify a (Infer v) env ind 
+      unify a (TV _ name) env ind 
           | typeVar a = do let tv = case lookup a env of
                                       Just ta  -> ta
                                       Nothing  -> argType t ind
-                           setType v tv
+                           setType name tv
                            return env
-          | otherwise = do setType v a
+          | otherwise = do setType name a
                            return env                 
       unify a b  env ind
           | typeVar a  = case lookup a env of 
                            Just at -> unify at b env ind
-                           Nothing ->  return $ (a,b):env
+                           Nothing -> do
+                             updateTEnv a b
+                             return $ (a,b):env
           | a == b     = return env
           | otherwise  = throwError $ errorMsg a b ind
 
       errorMsg e a ind = "type error: expected: " ++ show e ++ " actual: " ++ show a ++ "\nat the " ++ show ind ++ ". argument of " ++ f
+
+      updateTEnv tvar newt = do
+        env <- get
+        let env' = map replace env
+        put env'
+          where 
+            replace e@(name, q ::: t) | t == tvar = (name, q ::: newt)
+                                      | otherwise = e
 
       countArgs t = fArgs t 0
 
@@ -294,33 +306,33 @@ relationType _      = A :->: A :->: Bool
 
 -- |Decides whether the particular type have name function.
 named :: Typ -> QCheck ()
-named (Infer _) = return ()
+named (TV _ _) = return ()
 named t | t `elem` [File,Mod,Fun,Record,RecordField] = return ()
         | otherwise = throwError $ "doesn't have name: " ++ show t
 
 -- |Decides whether the particular type is referencable.
 referencable :: Typ -> QCheck ()
-referencable (Infer _) = return ()
+referencable (TV _ _) = return ()
 referencable t | t `elem` [Fun,Record,RecordField] = return ()
                | otherwise = throwError $ "not referencable: " ++ show t
                              
 typeable :: Typ -> QCheck ()
-typeable (Infer _) = return ()
+typeable (TV _ _) = return ()
 typeable t | t `elem` [FunParam,RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
 
 multiline :: Typ -> QCheck ()
-multiline (Infer _) = return ()
+multiline (TV _ _) = return ()
 multiline t | t `elem` [File,Mod,Fun] = return ()
             | otherwise = throwError $ "can't count line of codes: " ++ show t
 
 multiexpr :: Typ -> QCheck ()
-multiexpr (Infer _) = return ()
+multiexpr (TV _ _) = return ()
 multiexpr t | t `elem` [Fun,Expr] = return ()
             | otherwise = throwError $ "doesn't have expressions: " ++ show t
 
 ord :: Typ -> QCheck ()
-ord (Infer _) = return ()
+ord (TV _ _) = return ()
 ord t | t `elem` [Int,String,Bool] = return ()
       | otherwise = throwError $ "can't be ordered: " ++ show t
 

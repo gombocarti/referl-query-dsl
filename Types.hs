@@ -148,7 +148,7 @@ data Typ
     | Unit
     | FunRecursivity
     | FilePath
-    | Infer Id -- ^ Type of Id should be inferred.
+    | TV Char Id -- ^ Generated type variable.
     | A     -- ^ Type variable.
     | B     -- ^ Type variable.
     | Typ :->: Typ  -- ^ Function type.
