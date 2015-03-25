@@ -2,7 +2,7 @@ module Parser where
 
 import Text.Parsec
 import Text.Parsec.String
-import Text.Parsec.Pos (newPos)
+import Text.Parsec.Pos (initialPos, incSourceLine, setSourceColumn)
 import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
@@ -88,7 +88,7 @@ query :: QParser UQuery
 query = whiteSpace *> (set <|> initial <|> groupby <|> with <|> app <|> ref)
 
 ref :: QParser UQuery
-ref = URef <$> try (identifier <* notFollowedBy (symbol "∘"))
+ref = URef <$> try (name <* notFollowedBy (symbol "∘"))
 
 dataConst :: QParser UQuery
 dataConst = UDataConst <$> cons
@@ -103,6 +103,7 @@ app = parens app
       try (do f <- identifier
               args <- many1 (argument <|> parens argument)
               return (UAppExpr (UFName f) args))
+              <* whiteSpace
       <?> "function application"
           where argument = numLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> set
 
@@ -124,7 +125,14 @@ element :: QParser UQuery
 element = infixSetOp "∈" <?> "element of"
 
 funref :: QParser UFun
-funref = UFName <$> identifier <?> "function reference"
+funref = UFName <$> name <?> "function reference"
+
+name :: QParser String
+name = do
+  c <- T.identStart sqDef
+  cs <- many (T.identLetter sqDef)
+  skipMany (oneOf " \t")
+  return (c:cs)
 
 ring :: QParser String
 ring = lexeme $ string "∘"
@@ -267,8 +275,7 @@ parseFile file = do
   st <- getParserState
   contents <- liftIO (readFile file)
   setInput contents
-  let pos = newPos file 1 1
-  setPosition pos
+  setPosition (initialPos file)
   defs <- whiteSpace *> many def
   _ <- setParserState st
   return defs
