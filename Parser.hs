@@ -183,7 +183,7 @@ ret = UReturn <$> (tuple <|> app <|> ref <|> set)
 tuple :: QParser UQuery
 tuple = parens elems <?> "tuple"
     where 
-      elems = UTuple <$> commaSep1 ref
+      elems = UTuple <$> commaSep1 (app <|> ref)
 
 relation :: QParser UQuery
 relation = do rel <- try $ do 

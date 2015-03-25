@@ -11,7 +11,6 @@ import Data.Functor ((<$>))
 import Data.Function (on)
 import System.FilePath (takeFileName,takeDirectory)
 import Data.String.Utils (strip)
-import Text.PrettyPrint hiding (int)
 
 import qualified Sq
 
@@ -35,7 +34,7 @@ data Value
     | Chain (Sq.Chain Value)
     | Seq [Value]
     | Grouped [(Value,Value)]
-    | Tuple [Id] [Value]
+    | Tuple [UQuery] [Value]
     | FunDef UQuery
       deriving (Show,Eq)
 
@@ -174,10 +173,9 @@ eval UAtExpr _env = do
 eval (UReturn e) env = do 
   x <- eval e env
   seq [x]
-eval (UTuple ids) env = do
-  xs <- mapM (flip eval env) ids
-  let names = [name | UVarExpr name <- ids]
-  return $ Tuple names xs
+eval (UTuple components) env = do
+  xs <- mapM (flip eval env) components
+  return $ Tuple components xs
 eval (UStringLit s) _env = return $ String s
 eval (UNumLit i) _env = return $ Int i
 eval (UExprTypeLit t) _env = return $ ExprType t
@@ -422,17 +420,19 @@ showValue (Grouped xs) = unlines <$> mapM showGroup xs
             return $ sx ++ unlines ["  " ++ sy | sy <- words sys]
 
 showTuples :: [Value] -> Query String
-showTuples ts@((Tuple ids xs):_) = do
+showTuples ts@((Tuple components _):_) = do
+  let header = map show components
   lines <- mapM showLine ts
-  let colWidths = colWidth lines (replicate (length ids) 0)
-      ids'   = intercalate "|" $ zipWith padLabel ids colWidths
+  let colWidths = colWidth lines (replicate (length header) 0)
+      ids'   = intercalate "|" $ zipWith padLabel header colWidths
       lines' = unlines $ map (flip padLine colWidths) lines
       sep    = replicate (sum colWidths) '-'
-  return $ unlines [ids',sep,lines']
+  return $ unlines [ids',"",lines']
     where 
       padLabel label width = fillCenter width label
       padLine line widths  = concat $ zipWith padValue line widths
       padValue value width = fillLeft (width + 4) value
+showTuples _ = throwError "showTuples: parameter is not tuple"
 
 showLine :: Value -> Query [String]
 showLine (Tuple _ xs) = mapM showValue xs
