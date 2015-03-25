@@ -131,12 +131,13 @@ checkFunDef :: Id -> [Id] -> UQuery -> QCheck TUQuery
 checkFunDef f args body = do 
   namespace <- get
   zipWithM_ addArg args ['a'..]
-  body' ::: bodyType <- check body
+  body' ::: bodyType <- check body `catchError` handler
   argTypes <- forM args getType
   let ftype = makeFunType argTypes bodyType
   put namespace
   return $ UFunDef f args body' ::: ftype
       where addArg arg c = addVar arg (TV c)
+            handler err = throwError (err ++ "\nin function definition " ++ f)
 
 makeFunType :: [Typ] -> Typ -> Typ
 makeFunType args bodyt = let (cs, ftype) = foldr step ([],bodyt) args
