@@ -13,11 +13,6 @@ import System.Directory (getHomeDirectory)
 import System.FilePath ((</>))
 import Control.Exception (try, SomeException)
 
-{-
-parseQuery :: String -> Maybe Arg -> IO (Either ParseError UQuery)
-parseQuery = undefined
--}
-
 runQuery :: Query a ->  Database -> Maybe Arg -> IO (Either String a)
 runQuery q db arg = runErrorT (runReaderT (runReaderT q db) arg)
 

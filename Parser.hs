@@ -13,6 +13,10 @@ import Data.Maybe (fromJust)
 
 import Types (Id, UQuery(..),UF(..),Binop(..))
 
+-- | Convenience function for parsing queries.
+parseQuery :: String -> IO (Either ParseError UQuery)
+parseQuery s = runParserT query Nothing "" s
+
 --- Parsers:
 
 sqDef :: Monad m => L.GenLanguageDef String u m
