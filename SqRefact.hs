@@ -35,7 +35,7 @@ data Value
     | Seq [Value]
     | Grouped [(Value,Value)]
     | Tuple [UQuery] [Value]
-    | FunDef UQuery
+    | FunDef [Id] UQuery
       deriving (Show,Eq)
 
 instance Ord Value where
@@ -126,7 +126,7 @@ eval (UGroupBy f q) env = do
       group xs = map merge (groupBy criteria xs)
       criteria = (==) `on` fst
       merge xs = (fst . head $ xs, Seq (map snd xs))
-eval (UVarExpr v) env = readVar v env
+--eval (UVarExpr v) env = readVar v env
 {-
 eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
     where f      = makeFun fs
@@ -141,13 +141,16 @@ eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 --eval (UAppExpr UChainN [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 --    where f = makeFun fs
 -}
-eval (UFunDef _ [] body) env = eval body env     
+eval (URef name) env = readVar name env
 eval (UWith defs q) env = eval q (funs ++ env)
     where
-      funs = [(f, FunDef def) | def@(UFunDef f _ _) <- defs]
+      funs = [(f, FunDef args body) | (UFunDef f args body) <- defs]
 eval (UAppExpr f args) env = do
   args' <- mapM (flip eval env) args
-  evalApp f args'
+  v <- maybeReadVar f env
+  case v of
+    Just fundef -> evalFunDef fundef args' env
+    Nothing     -> evalApp f args'
 eval UModules _env = queryDb Mod (modpath "all")
 eval UFiles _env = queryDb File (filepath "all")
 eval UAtFunction _env = do
@@ -269,10 +272,13 @@ concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
     where step (Seq xs) acc = xs ++ acc
 
+maybeReadVar :: Id -> Env -> Query (Maybe Value)
+maybeReadVar v env = return $ lookup v env
+
 readVar :: Id -> Env -> Query Value
 readVar v env = case lookup v env of
-                  Just x  -> return x
-                  Nothing -> throwError $ "undefined variable: " ++ v
+                  Just v  -> return v
+                  Nothing -> throwError ("undefined variable: " ++ v)
 
 evalApp :: Id -> [Value] -> Query Value
 evalApp "name" [arg] = 
@@ -358,9 +364,8 @@ evalApp "average" [Seq xs] = seq . map Int . Sq.average $ ns
 evalApp "length" [Chain c] = int . length . getChain $ c
 evalApp "distinct" [Chain c] = chain $ fChain nub c
 
-evalFunDef (UFunDef _ argNames body) params env =
+evalFunDef (FunDef argNames body) params env =
     eval body (zip argNames params ++ env)
-
 
 int :: Int -> Query Value
 int = return . Int
