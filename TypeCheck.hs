@@ -29,10 +29,10 @@ setType old new = do
 addVar :: Id -> Typ -> QCheck ()
 addVar v t = modify ((v,t):)
 
-type QCheck a = StateT Namespace (WriterT [String] (Either String)) a
+type QCheck a = StateT Namespace (StateT (Maybe Id)  (WriterT [String] (Either String))) a
 
 runQCheck :: QCheck a -> Namespace -> Either String ((a,Namespace),[String])
-runQCheck q ns = runWriterT (runStateT q ns)
+runQCheck q ns = runWriterT (evalStateT (runStateT q ns) Nothing)
 
 evalQCheck :: QCheck a -> Namespace -> Either String (a, [String])
 evalQCheck q ns = case runQCheck q ns of
@@ -88,6 +88,8 @@ check UAtModule = return $ UAtModule ::: Mod
 check UAtFunction = return $ UAtFunction ::: Fun
 check UAtExpr = return $ UAtExpr ::: Expr
 check (UAppExpr f args) = do
+  defining <- getFunDef
+  when (defining == Just f) (throwError "recursion is not supported")
   targs' <- mapM check args
   let (args', argtypes') = unzip [(arg, argt) | arg ::: argt <- targs']
   ft <- checkApp f argtypes'
@@ -131,6 +133,7 @@ checkFunDef :: Id -> [Id] -> UQuery -> QCheck TUQuery
 checkFunDef f args body = do 
   namespace <- get
   zipWithM_ addArg args ['a'..]
+  setFunDef f
   body' ::: bodyType <- check body `catchError` handler
   argTypes <- forM args getType
   let ftype = makeFunType argTypes bodyType
@@ -138,6 +141,12 @@ checkFunDef f args body = do
   return $ UFunDef f args body' ::: ftype
       where addArg arg c = addVar arg (TV c)
             handler err = throwError (err ++ "\nin function definition " ++ f)
+
+setFunDef :: Id -> QCheck ()
+setFunDef f = lift . put . Just $ f
+
+getFunDef :: QCheck (Maybe Id)
+getFunDef = lift get
 
 makeFunType :: [Typ] -> Typ -> Typ
 makeFunType args bodyt = let (cs, ftype) = foldr step ([],bodyt) args
