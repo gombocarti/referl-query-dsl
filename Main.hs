@@ -5,6 +5,7 @@ import qualified SqDeep as Sd
 import SqRefact
 -- import qualified Test
 import Text.Parsec (runParserT)
+import Control.Monad (when)
 import Control.Monad.Reader
 import Control.Monad.Error
 import System.Environment (getArgs, getProgName)
@@ -21,12 +22,15 @@ run sq arg = do
   case parseResult of
     Right (Right tree) ->
         case runQCheck (check tree) [] of
-          Right (q ::: _, _)-> do
-                             db <- initErl "haskell@localhost"
-                             x <- runQuery (eval q [] >>= showValue) db arg
-                             case x of
-                               Right s  -> putStrLn s
-                               Left err -> putStrLn ("error: " ++ err)
+          Right ((q ::: _, _), warnings)-> 
+              do
+                when (warnings /= []) 
+                         (putStrLn ("warning:\n" ++ unlines warnings))
+                db <- initErl "haskell@localhost"
+                x <- runQuery (eval q [] >>= showValue) db arg
+                case x of
+                  Right s  -> putStrLn s
+                  Left err -> putStrLn ("error: " ++ err)
           Left err -> putStrLn ("type error: " ++ err)
     Right (Left perror) -> putStrLn ("parse error: " ++ show perror)
     Left exc -> putStrLn ("i/o error: " ++ show (exc :: SomeException))
