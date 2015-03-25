@@ -160,7 +160,7 @@ typeCheck f t args = fst <$> tcheck t args [] 1
     where
       tcheck :: Typ -> [Typ] -> TEnv-> Int -> QCheck (Typ,TEnv)
       tcheck (_ :->: _) [] _env _ind =
-          tooFewParams f (countArgs t) (length args)
+          tooFewParams f argsCount (length args)
       tcheck (a :->: b) (x:xs) env ind = do
         env' <- unify a x env ind
         tcheck b xs env' (ind + 1)
@@ -169,7 +169,7 @@ typeCheck f t args = fst <$> tcheck t args [] 1
         checkConst constr env'
         return res
       tcheck _ (_:_) _env _ind = 
-          tooManyParams f (countArgs t) (length args)
+          tooManyParams f argsCount (length args)
       tcheck (List a) [] env ind = do
         (resT, _) <- tcheck a [] env ind
         return (List resT, env)
@@ -210,10 +210,10 @@ typeCheck f t args = fst <$> tcheck t args [] 1
         let env' = map replace env
         put env'
           where 
-            replace e@(name, q ::: t) | t == tvar = (name, q ::: newt)
-                                      | otherwise = e
+            replace e@(name, q ::: tq) | tq == tvar = (name, q ::: newt)
+                                       | otherwise = e
 
-      countArgs t = fArgs t 0
+      argsCount = fArgs t 0
 
       fArgs (_ :=>: b) n = fArgs b n
       fArgs (_ :->: b) n = fArgs b (n + 1)
