@@ -1,8 +1,7 @@
 module Parser where
 
 import Text.Parsec
-import Text.Parsec.String
-import Text.Parsec.Pos (initialPos, incSourceLine, setSourceColumn)
+import Text.Parsec.Pos (initialPos)
 import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
