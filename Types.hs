@@ -27,7 +27,8 @@ data TF a where
 
 -- |Untyped syntax tree type for queries.
 data UQuery
-    = UAppExpr Id [UQuery]
+    = UQuery UQuery  -- ^ Root of syntax tree
+    | UAppExpr Id [UQuery]
     | UFunExpr Id
     | UFunComp [Id]
     | UBind UQuery UF
@@ -52,7 +53,7 @@ data UQuery
     | UAtModule 
     | UAtFunction
     | UAtExpr
-      deriving (Show,Eq)
+      deriving Eq
 
 data TUQuery = UQuery ::: Typ
 
@@ -204,3 +205,27 @@ instance Show Typ where
 
 instance Show TUQuery where
     show (q ::: t) = show q ++ " :: " ++ show t
+
+instance Show UQuery where
+    show (URef name) = name
+    show (UAppExpr f args) = f ++ " " ++ unwords (map show args)
+    show (UBind a (UF _ (UReturn _))) = show a ++ " }"
+    show (UBind a (UF "()" b)) = show a ++ ", " ++ show b
+    show (UBind a (UF f b)) = f ++ " <- " ++ show a ++ ", " ++ show b
+    show (UReturn _) = ""
+    show (UWith defs q) = "with \n" ++ unlines (map show defs) ++ show q
+    show (UFunDef f args body) = f ++ " " ++ unwords args ++ " = " ++ show body
+    show (UGuard g) = show g
+    show (URelation op a b) = show a ++ " " ++ show op ++ " " ++ show b
+    show (UQuery q) = showReturn q ++ show q
+    show UModules = "modules"
+    show UFiles   = "files"
+    show UAtModule = "atModule"
+    show UAtFile  = "atFile"
+    show UAtExpr = "atExpression"
+    show UAtFunction = "atFunction"
+
+showReturn :: UQuery -> String
+showReturn (UBind _ (UF _ q)) = showReturn q
+showReturn (UReturn ret)      = "{ " ++ show ret ++ " | "
+showReturn _ = ""
