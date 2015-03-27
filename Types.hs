@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs #-}
 module Types where
 import Data.List (intercalate)
+import Text.Parsec.Pos (SourcePos)
 
 import qualified Sq (DbModule, DbFunction, Named, ExprType, DbFunctionType)
 
@@ -32,7 +33,7 @@ data UQuery
     | UFunExpr Id
     | UFunComp [Id]
     | UBind UQuery UF
-    | UFunDef Id [Id] UQuery
+    | UFunDef Id [Id] UQuery SourcePos
     | UWith [UQuery] UQuery
     | UReturn UQuery
     | UTuple [UQuery]
@@ -214,7 +215,7 @@ instance Show UQuery where
     show (UBind a (UF f b)) = f ++ " <- " ++ show a ++ ", " ++ show b
     show (UReturn _) = ""
     show (UWith defs q) = "with \n" ++ unlines (map show defs) ++ show q
-    show (UFunDef f args body) = f ++ " " ++ unwords args ++ " = " ++ show body
+    show (UFunDef f args body _) = f ++ " " ++ unwords args ++ " = " ++ show body
     show (UGuard g) = show g
     show (URelation op a b) = show a ++ " " ++ show op ++ " " ++ show b
     show (UQuery q) = showReturn q ++ show q

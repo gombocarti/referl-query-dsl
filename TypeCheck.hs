@@ -8,6 +8,7 @@ import Control.Monad.Writer
 import Control.Monad.Error (throwError,catchError)
 import Control.Applicative ((<$>))
 import Text.Read (readMaybe)
+import Text.Parsec.Pos (SourcePos)
 import Types
 
 getType :: Id -> QCheck Typ
@@ -43,6 +44,7 @@ type Namespace = [(Id, Typ)]
 
 -- |Type-checks and transforms untyped queries.
 check :: UQuery -> QCheck TUQuery
+check (UQuery q) = check q
 check (UBind m (UF x body)) = do
   m' ::: List tm <- check m
   addVar x tm
@@ -65,9 +67,9 @@ check (UWith defs q) = do
   let ds = [d | d ::: _ <- defs']
   q' ::: tq <- check q
   return $ UWith ds q' ::: tq
-check (UFunDef f args body) = do
+check (UFunDef f args body pos) = do
   checkIsDefined f
-  fundef ::: ftype <- checkFunDef f args body    
+  fundef ::: ftype <- checkFunDef f args body pos
   addVar f ftype
   return (fundef ::: ftype)
 check q@(URef name) = do
@@ -128,8 +130,8 @@ checkIsDefined f = do
   when (isJust . lookup f $ namespace)
            (throwError ("function already defined: " ++ f))
 
-checkFunDef :: Id -> [Id] -> UQuery -> QCheck TUQuery
-checkFunDef f args body = do 
+checkFunDef :: Id -> [Id] -> UQuery -> SourcePos -> QCheck TUQuery
+checkFunDef f args body pos = do 
   namespace <- get
   zipWithM_ addArg args ['a'..]
   setFunDef f
@@ -137,9 +139,9 @@ checkFunDef f args body = do
   argTypes <- forM args getType
   let ftype = makeFunType argTypes bodyType
   put namespace
-  return $ UFunDef f args body' ::: ftype
+  return $ UFunDef f args body' pos ::: ftype
       where addArg arg c = addVar arg (TV c)
-            handler err = throwError (err ++ "\nin function definition " ++ f)
+            handler err = throwError (err ++ "\nin function definition " ++ f ++ "\nin " ++ show pos)
 
 setFunDef :: Id -> QCheck ()
 setFunDef f = lift . modify $ (f:)

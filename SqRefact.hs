@@ -113,6 +113,7 @@ type Env = [(Id, Value)]
 type Query a = ReaderT Database (ReaderT (Maybe Arg) (ErrorT String IO)) a
 
 eval :: UQuery -> Env -> Query Value
+eval (UQuery q) env = eval q env
 eval (UBind m (UF x body)) env = do 
   Seq as <-  eval m env
   xs <- forM as (\a -> eval body ((x,a):env))
@@ -144,7 +145,7 @@ eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 eval (URef name) env = readVar name env
 eval (UWith defs q) env = eval q (funs ++ env)
     where
-      funs = [(f, FunDef args body) | (UFunDef f args body) <- defs]
+      funs = [(f, FunDef args body) | (UFunDef f args body _) <- defs]
 eval (UAppExpr f args) env = do
   args' <- mapM (flip eval env) args
   v <- maybeReadVar f env

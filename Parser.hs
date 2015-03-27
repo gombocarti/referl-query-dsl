@@ -41,18 +41,18 @@ lexer = T.makeTokenParser sqDef
 
 braces :: QParser a -> QParser a
 
-lexeme     = T.lexeme lexer
-identifier = T.identifier lexer
-symbol     = T.symbol lexer
-reserved   = T.reserved lexer
-reservedOp = T.reservedOp lexer
-braces     = T.braces lexer
-whiteSpace = T.whiteSpace lexer
+lexeme        = T.lexeme lexer
+identifier    = T.identifier lexer
+symbol        = T.symbol lexer
+reserved      = T.reserved lexer
+reservedOp    = T.reservedOp lexer
+braces        = T.braces lexer
+whiteSpace    = T.whiteSpace lexer
 stringLiteral = T.stringLiteral lexer
-comma      = T.comma lexer
-decimal    = T.decimal lexer
-parens     = T.parens lexer
-commaSep1  = T.commaSep1 lexer
+comma         = T.comma lexer
+decimal       = T.decimal lexer
+parens        = T.parens lexer
+commaSep1     = T.commaSep1 lexer
 
 type QParser a = ParsecT String (Maybe UQuery) IO a
 
@@ -88,7 +88,9 @@ groupby = do
   return $ UGroupBy f q
 
 query :: QParser UQuery
-query = whiteSpace *> (set <|> initial <|> groupby <|> with <|> app <|> ref)
+query = do 
+  q <- whiteSpace *> (set <|> initial <|> groupby <|> with <|> app <|> ref)
+  return (UQuery q)
 
 ref :: QParser UQuery
 ref = URef <$> try (name <* notFollowedBy (symbol "∘"))
@@ -271,7 +273,8 @@ def = do
   args <- many identifier
   _ <- symbol "="
   body <- query
-  return $ UFunDef f args body
+  pos <- getPosition
+  return $ UFunDef f args body pos
 
 parseFile :: FilePath -> QParser [UQuery]
 parseFile file = do
