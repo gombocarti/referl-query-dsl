@@ -35,7 +35,7 @@ data Value
     | Seq [Value]
     | Grouped [(Value,Value)]
     | Tuple [UQuery] [Value]
-    | FunDef [Id] UQuery
+    | FunDef [Id] [(Id,Value)] UQuery
       deriving (Show,Eq)
 
 instance Ord Value where
@@ -145,8 +145,8 @@ eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 eval (URef name) env = readVar name env
 eval (UWith defs q) env = eval q (funs ++ env)
     where
-      funs = [(f, FunDef args body) | (UFunDef f args body _) <- defs]
-eval (UAppExpr f args) env = do
+      funs = [(f, FunDef args [] body) | (UFunDef f args body _) <- defs]
+eval (UAppExpr f) args) env = do
   args' <- mapM (flip eval env) args
   v <- maybeReadVar f env
   case v of
@@ -365,8 +365,15 @@ evalApp "average" [Seq xs] = seq . map Int . Sq.average $ ns
 evalApp "length" [Chain c] = int . length . getChain $ c
 evalApp "distinct" [Chain c] = chain $ fChain nub c
 
-evalFunDef (FunDef argNames body) params env =
-    eval body (zip argNames params ++ env)
+evalFunDef :: Value -> [Value] -> Env -> Query Value
+evalFunDef (FunDef argNames ps body) params env =
+    let (defined,argNames') = splitAt (length params) argNames
+        defined' = zip defined params ++ ps
+    in
+      case argNames' of
+        [] -> eval body (defined' ++ env)
+        _  -> return (FunDef argNames' defined' body)
+evalFunDef _ _ _ = error "evalFunDef: not function definition"
 
 int :: Int -> Query Value
 int = return . Int
