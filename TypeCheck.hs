@@ -44,7 +44,9 @@ type Namespace = [(Id, Typ)]
 
 -- |Type-checks and transforms untyped queries.
 check :: UQuery -> QCheck TUQuery
-check (UQuery q) = check q
+check (UQuery q) = do
+  q' ::: t <- check q
+  return $ UQuery q' ::: t
 check (UBind m (UF x body)) = do
   m' ::: List tm <- check m
   addVar x tm
@@ -136,6 +138,7 @@ checkFunDef f args body pos = do
   zipWithM_ addArg args ['a'..]
   setFunDef f
   body' ::: bodyType <- check body `catchError` handler
+  removeFunDef
   argTypes <- forM args getType
   let ftype = makeFunType argTypes bodyType
   put namespace
@@ -148,6 +151,9 @@ setFunDef f = lift . modify $ (f:)
 
 getFunDef :: QCheck [Id]
 getFunDef = lift get
+
+removeFunDef :: QCheck ()
+removeFunDef = lift . modify $ tail
 
 makeFunType :: [Typ] -> Typ -> Typ
 makeFunType args bodyt = let (cs, ftype) = foldr step ([],bodyt) args

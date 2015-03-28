@@ -198,10 +198,15 @@ instance Show Typ where
     show FunRecursivity = "FunRecursivity"
     show Type = "Type"
     show FunParam = "FunParam"
+    show Spec = "Spec"
+    show Macro = "Macro"
+    show SpecParam = "SpecParam"
+    show (Grouped a b) = "Grouped " ++ show a ++ " " ++ show b
     show ExprType = "ExprType"
     show String = "String"
     show Int = "Int"
     show Bool = "Bool"
+    show Unit = "()"
     show FilePath = "FilePath"
 
 instance Show TUQuery where
@@ -225,6 +230,9 @@ instance Show UQuery where
     show UAtFile  = "atFile"
     show UAtExpr = "atExpression"
     show UAtFunction = "atFunction"
+    show (UStringLit s) = show s
+    show (UNumLit n) = show n
+--    show (UBool b) = show b
 
 showReturn :: UQuery -> String
 showReturn (UBind _ (UF _ q)) = showReturn q

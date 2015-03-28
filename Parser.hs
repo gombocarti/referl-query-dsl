@@ -89,7 +89,7 @@ groupby = do
 
 query :: QParser UQuery
 query = do 
-  q <- whiteSpace *> (set <|> initial <|> groupby <|> with <|> app <|> ref)
+  q <- whiteSpace *> (set <|> initial <|> groupby <|> with <|> relation <|> app <|> ref)
   return (UQuery q)
 
 ref :: QParser UQuery
