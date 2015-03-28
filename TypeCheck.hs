@@ -16,7 +16,7 @@ getType v = do
   env <- get
   case lookup v env of
     Just t  -> return t
-    Nothing -> throwError ("undefined identifier: " ++ v)
+    Nothing -> throwError ("not in scope: " ++ v)
                
 setType :: Typ -> Typ -> QCheck ()
 setType old new = do
@@ -137,14 +137,15 @@ checkFunDef f args body pos = do
   namespace <- get
   zipWithM_ addArg args ['a'..]
   setFunDef f
-  body' ::: bodyType <- check body `catchError` handler
+  body' ::: bodyType <- check body `catchError` addLocation
   removeFunDef
   argTypes <- forM args getType
   let ftype = makeFunType argTypes bodyType
   put namespace
   return $ UFunDef f args body' pos ::: ftype
-      where addArg arg c = addVar arg (TV c)
-            handler err = throwError (err ++ "\nin function definition " ++ f ++ "\nin " ++ show pos)
+      where 
+        addArg arg c     = addVar arg (TV c)
+        addLocation err  = throwError (err ++ "\nin function definition " ++ f ++ "\nin " ++ show pos)
 
 setFunDef :: Id -> QCheck ()
 setFunDef f = lift . modify $ (f:)
@@ -167,15 +168,19 @@ typeCheck :: Id -> Typ -> [Typ] -> QCheck Typ
 typeCheck f t args = fst <$> tcheck t args [] 1
     where
       tcheck :: Typ -> [Typ] -> TEnv-> Int -> QCheck (Typ,TEnv)
-      tcheck (_ :->: _) [] _env _ind =
-          tooFewParams f argsCount (length args)
+      tcheck a@(_ :->: _) [] env _ind =
+          return (a,env)
       tcheck (a :->: b) (x:xs) env ind = do
         env' <- unify a x env ind
         tcheck b xs env' (ind + 1)
       tcheck (constr :=>: a) args env ind = do
-        res@(_,env') <- tcheck a args env ind
-        checkConst constr env'
-        return res
+        res@(a',env') <- tcheck a args env ind
+        let v = getTypeVar constr
+        if isJust . lookup v $ env'
+        then do
+          checkConst constr env'
+          return res
+        else return (constr :=>: a',env')
       tcheck _ (_:_) _env _ind = 
           tooManyParams f argsCount (length args)
       tcheck (List a) [] env ind = do
@@ -189,16 +194,17 @@ typeCheck f t args = fst <$> tcheck t args [] 1
 
       unify :: Typ -> Typ -> TEnv -> Int -> QCheck TEnv
       unify t1@(a :->: b) t2@(c :->: d) env ind =
-          catchError (do
+          catchError
+          (do
             env' <- unify a c env ind
             unify b d env' ind)
           (\_ -> throwError $ errorMsg t1 t2 ind)
       unify (List a) (List b) env ind = unify a b env ind
       unify a b@(TV _) env ind 
-          | typeVar a = do let tv = case lookup a env of
+          | typeVar a = do let tb = case lookup a env of
                                       Just ta  -> ta
                                       Nothing  -> argType t ind
-                           setType b tv
+                           setType b tb
                            return $ (a,b):env
           | otherwise = do setType b a
                            return env                 
@@ -219,6 +225,13 @@ typeCheck f t args = fst <$> tcheck t args [] 1
       fArgs (_ :->: b) n = fArgs b (n + 1)
       fArgs _          n = n
 
+getTypeVar (Named a) = a
+getTypeVar (Referencable a) = a
+getTypeVar (Typeable a) = a
+getTypeVar (MultiLine a) = a
+getTypeVar (MultiExpression a) = a
+getTypeVar (Ord a) = a
+
 argType :: Typ -> Int -> Typ
 argType (a :->: _) 1 = a
 argType (_ :->: b) n = argType b (n - 1)
@@ -238,9 +251,6 @@ argType a _ = error ("argType: not function type: " ++ show a)
 
 tooManyParams :: Id -> Int -> Int -> QCheck a
 tooManyParams f expected actual = throwError $ "too many parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")" 
-
-tooFewParams :: Id -> Int -> Int -> QCheck a
-tooFewParams f expected actual = throwError $ "too few parameters: " ++ f ++ " (expected " ++ show expected ++ ", actual: " ++ show actual ++ ")"
 
 type ErrMsg = String
 
