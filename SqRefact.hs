@@ -146,7 +146,7 @@ eval (URef name) env = readVar name env
 eval (UWith defs q) env = eval q (funs ++ env)
     where
       funs = [(f, FunDef args [] body) | (UFunDef f args body _) <- defs]
-eval (UAppExpr f) args) env = do
+eval (UAppExpr f args) env = do
   args' <- mapM (flip eval env) args
   v <- maybeReadVar f env
   case v of
