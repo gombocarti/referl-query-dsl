@@ -12,6 +12,7 @@ import Data.Functor ((<$>))
 import Data.Function (on)
 import System.FilePath (takeFileName,takeDirectory)
 import Data.String.Utils (strip)
+import Sq (subset)
 
 import qualified Sq
 
@@ -136,8 +137,12 @@ eval (UGroupBy f q) = do
 eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
     where f      = makeFun fs
           Int n' = eval n env
-eval (UAppExpr ULfp [fs,v]) env = Seq $ Sq.lfp f (eval v env)
+-}
+eval (UAppExpr "lfp" [fs,x]) = do
+  x' <- eval x
+  Seq <$> lfpM f x'
     where f = makeFun fs
+{-
 eval (UAppExpr UIteration [n,fs,v]) env = Seq $ Sq.iteration n' f (eval v env)
     where f      = makeFun fs
           Int n' = eval n env
@@ -276,11 +281,28 @@ makeFun (UFunComp args) = \v -> let Seq xs = foldr step (Seq [v]) args in xs
       step f (Seq val) = concatValue $ map (\arg -> evalApp f [arg]) val
 -}
 
-makeFun :: UQuery -> Value -> Query Value
-makeFun (URef f) v = evalApp' f v
-makeFun (UFunComp args) v = foldM step (Seq [v]) (reverse args)
+makeFun :: UQuery -> Value -> Query [Value]
+makeFun (URef f) v = do Seq xs <- evalApp' f v
+                        return xs
+makeFun app@(UAppExpr _ _) v = do f <- eval app
+                                  Seq xs <- evalApp f [v]
+                                  return xs
+makeFun (UFunComp args) v = do Seq xs <- foldM step (Seq [v]) (reverse args)
+                               return xs
     where 
       step (Seq xs) f = concatValueM $ mapM (evalApp' f) xs
+
+lfpM :: (Value -> Query [Value]) -> Value -> Query [Value]
+lfpM f x = loop [] [x]
+    where 
+      loop :: [Value] -> [Value] -> Query [Value]
+      loop old curr = do
+        let all = union old curr
+        new <- mapM f curr
+        let new' = concat new
+        if new' `subset` all
+        then return all
+        else loop all new'            
 
 concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
@@ -332,9 +354,9 @@ evalApp (Section "∈" [a]) [Seq bs] = bool $ a `elem` bs
 evalApp (Section "⊂" [Seq as]) [Seq bs] = bool $ as `Sq.all_in` bs
 evalApp (Section "any_in" [Seq as]) [Seq bs] = bool $ as `Sq.any_in` bs
 evalApp (Section "∪" [Seq as]) [Seq bs] = seq $ as `union` bs
-evalApp (Section "calls" []) arg = evalApp (Section "callsP" arg) [p]
+evalApp (Section "calls" []) arg = evalApp (Section "callsP" [p]) arg
     where p = (Section "const" [Bool True])
-evalApp (Section "callsP" [Fun f]) [p] = do 
+evalApp (Section "callsP" [p]) [Fun f] = do 
   Seq funs <- queryDb1 Fun (funpath "funcalls") f
   funs' <- filterM pred funs
   seq funs'

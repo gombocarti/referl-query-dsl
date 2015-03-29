@@ -278,7 +278,7 @@ funtypes =
     , ("loc", MultiLine a :=>: a :->: List Int)
     , ("null", List a :->: Bool)
     , ("calls", Fun :->: List Fun)
-    , ("callsP", Fun :->: (Fun :->: Bool) :->: List Fun)
+    , ("callsP", (Fun :->: Bool) :->: Fun :->: List Fun)
     , ("path",  File :->: FilePath)
     , ("directory", File :->: FilePath)
     , ("filename", File :->: FilePath)
