@@ -142,10 +142,12 @@ eval (UAppExpr "lfp" [fs,x]) = do
   x' <- eval x
   Seq <$> lfpM f x'
     where f = makeFun fs
-{-
-eval (UAppExpr UIteration [n,fs,v]) env = Seq $ Sq.iteration n' f (eval v env)
+eval (UAppExpr "iteration" [n,fs,x]) = do
+  Int n' <- eval n
+  x' <- eval x
+  Seq <$> iterationM n' f x'
     where f      = makeFun fs
-          Int n' = eval n env
+{-
 eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
     where f = makeFun fs
 --eval (UAppExpr UChainN [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
@@ -311,6 +313,13 @@ closureNM n f x = loop n [x]
       loop m xs = do
         xs' <- concat <$> mapM f xs
         loop (m - 1) (union xs xs')  -- foldM
+
+iterationM :: Int -> (Value -> Query [Value]) -> Value -> Query [Value]
+iterationM n f x = loop n [x]
+    where loop 0 xs = return xs
+          loop m xs = do
+            xs' <- concat <$> mapM f xs
+            loop (m - 1) xs'
 
 concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
