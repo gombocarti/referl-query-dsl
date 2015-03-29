@@ -90,6 +90,8 @@ check UAtFile = return $ UAtFile ::: File
 check UAtModule = return $ UAtModule ::: Mod
 check UAtFunction = return $ UAtFunction ::: Fun
 check UAtExpr = return $ UAtExpr ::: Expr
+check (UAppExpr "calls" args) | length args == 1 =
+  check (UAppExpr "calls" (args ++ [UAppExpr "const" [UBoolLit True]]))
 check (UAppExpr f args) = do
   defining <- getFunDef
   when (f `elem` defining) (throwError "recursion is not supported")
@@ -118,6 +120,7 @@ check (UGuard p) = do
   return $ UGuard p' ::: List Unit
 check q@(UNumLit _) = return $ q ::: Int
 check q@(UStringLit _) = return $ q ::: String
+check q@(UBoolLit _) = return $ q ::: Bool
 
 -- |Checks the argument types.
 checkApp :: Id -> [Typ] -> QCheck Typ
@@ -170,6 +173,10 @@ typeCheck f t args = fst <$> tcheck t args [] 1
       tcheck :: Typ -> [Typ] -> TEnv-> Int -> QCheck (Typ,TEnv)
       tcheck a@(_ :->: _) [] env _ind =
           return (a,env)
+      tcheck a@(_ :->: _) ((constr :=>: c) : xs) env ind = do
+        res@(_,env') <- tcheck a (c : xs) env ind
+        checkConst constr env'
+        return res
       tcheck (a :->: b) (x:xs) env ind = do
         env' <- unify a x env ind
         tcheck b xs env' (ind + 1)
@@ -207,7 +214,7 @@ typeCheck f t args = fst <$> tcheck t args [] 1
                            setType b tb
                            return $ (a,b):env
           | otherwise = do setType b a
-                           return env                 
+                           return ((b,a):env)
       unify a b env ind
           | typeVar a  = case lookup a env of 
                            Just at -> unify at b env ind
@@ -217,7 +224,7 @@ typeCheck f t args = fst <$> tcheck t args [] 1
           | a == b     = return env
           | otherwise  = throwError $ errorMsg a b ind
 
-      errorMsg e a ind = "type error: expected: " ++ show e ++ " actual: " ++ show a ++ "\nat the " ++ show ind ++ ". argument of " ++ f
+      errorMsg e a ind = "expected: " ++ show e ++ " actual: " ++ show a ++ "\nat the " ++ show ind ++ ". argument of " ++ f -- todo namely, show arg
 
       argsCount = fArgs t 0
 
@@ -262,7 +269,7 @@ funtypes =
     , ("arity", Fun :->: Int)
     , ("loc", MultiLine a :=>: a :->: List Int)
     , ("null", List a :->: Bool)
-    , ("calls", Fun :->: List Fun)
+    , ("calls", Fun :->: (Fun :->: Bool) :->: List Fun)
     , ("path",  File :->: FilePath)
     , ("directory", File :->: FilePath)
     , ("filename", File :->: FilePath)
@@ -296,8 +303,10 @@ funtypes =
     , ("average", List Int :->: List Int)
     , ("count", Chain a :->: Int)
     , ("distinct", Chain a :->: Chain a)
+    , ("const", a :->: b :->: a)
     ]
     where a = TV 'a'
+          b = TV 'b'
 
 relationType :: Binop -> Typ
 relationType Regexp = String :->: String :->: Bool

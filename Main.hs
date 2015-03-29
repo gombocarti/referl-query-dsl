@@ -6,6 +6,7 @@ import SqRefact
 -- import qualified Test
 import Text.Parsec (runParserT)
 import Control.Monad (when)
+import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Error
 import System.Environment (getArgs, getProgName)
@@ -14,7 +15,7 @@ import System.FilePath ((</>))
 import Control.Exception (try, SomeException)
 
 runQuery :: Query a ->  Database -> Maybe Arg -> IO (Either String a)
-runQuery q db arg = runErrorT (runReaderT (runReaderT q db) arg)
+runQuery q db arg = runErrorT (runReaderT (runReaderT (evalStateT q []) db) arg)
 
 run :: String -> Maybe Arg -> IO ()
 run sq arg = do
@@ -27,7 +28,7 @@ run sq arg = do
                 when (warnings /= []) 
                          (putStrLn ("warning:\n" ++ unlines warnings))
                 db <- initErl "haskell@localhost"
-                x <- runQuery (eval q [] >>= showValue) db arg
+                x <- runQuery (eval q >>= showValue) db arg
                 case x of
                   Right s  -> putStrLn s
                   Left err -> putStrLn ("error: " ++ err)

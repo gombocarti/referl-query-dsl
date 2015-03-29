@@ -46,6 +46,7 @@ data UQuery
     | UDataConst Id
     | UStringLit String
     | UNumLit Int
+    | UBoolLit Bool
     | UExprTypeLit Sq.ExprType
     | UFunRecurLit Sq.DbFunctionType
     | UModules
@@ -54,7 +55,7 @@ data UQuery
     | UAtModule 
     | UAtFunction
     | UAtExpr
-      deriving Eq
+      deriving (Eq,Show)
 
 data TUQuery = UQuery ::: Typ
 
@@ -211,7 +212,7 @@ instance Show Typ where
 
 instance Show TUQuery where
     show (q ::: t) = show q ++ " :: " ++ show t
-
+{-
 instance Show UQuery where
     show (URef name) = name
     show (UAppExpr f args) = f ++ " " ++ unwords (map show args)
@@ -238,3 +239,4 @@ showReturn :: UQuery -> String
 showReturn (UBind _ (UF _ q)) = showReturn q
 showReturn (UReturn ret)      = "{ " ++ show ret ++ " | "
 showReturn _ = ""
+-}

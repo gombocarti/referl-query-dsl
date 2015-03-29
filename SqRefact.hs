@@ -6,6 +6,7 @@ import Foreign.Erlang
 import Data.List (union,nub,groupBy,intercalate)
 import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
+import Control.Monad.State
 import Control.Monad.Error
 import Data.Functor ((<$>))
 import Data.Function (on)
@@ -36,6 +37,7 @@ data Value
     | Grouped [(Value,Value)]
     | Tuple [UQuery] [Value]
     | FunDef [Id] [(Id,Value)] UQuery
+    | Section Id [Value]
       deriving (Show,Eq)
 
 instance Ord Value where
@@ -76,7 +78,7 @@ type Arg = (File,FilePosition)
 
 getArg :: Query ErlType
 getArg = do
-  Just (file,pos) <- lift ask
+  Just (file,pos) <- lift . lift $ ask
   return $ ErlList [ erlPair (ErlAtom "ask_missing") (ErlAtom "false")
                    , erlPair (ErlAtom "file") file
                    , erlPair (ErlAtom "position") pos
@@ -110,17 +112,19 @@ database mbox = Database { call = rpcCall mbox referl }
 
 type Env = [(Id, Value)]
 
-type Query a = ReaderT Database (ReaderT (Maybe Arg) (ErrorT String IO)) a
+type Query a = StateT Env (ReaderT Database (ReaderT (Maybe Arg) (ErrorT String IO))) a
 
-eval :: UQuery -> Env -> Query Value
-eval (UQuery q) env = eval q env
-eval (UBind m (UF x body)) env = do 
-  Seq as <-  eval m env
-  xs <- forM as (\a -> eval body ((x,a):env))
+eval :: UQuery -> Query Value
+eval (UQuery q) = eval q
+eval (UBind m (UF x body)) = do 
+  Seq as <-  eval m
+  env <- get
+  xs <- forM as (\a -> put ((x,a):env) >> eval body)
+  put env
   return $ concatValue xs
-eval (UGroupBy f q) env = do
-  Seq xs <- eval q env
-  ys <- forM xs (\x -> evalApp f [x])
+eval (UGroupBy f q) = do
+  Seq xs <- eval q
+  ys <- forM xs (evalApp' f)
   let zs = zip ys xs
   return $ Grouped (group zs)
     where 
@@ -142,50 +146,53 @@ eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 --eval (UAppExpr UChainN [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 --    where f = makeFun fs
 -}
-eval (URef name) env = readVar name env
-eval (UWith defs q) env = eval q (funs ++ env)
+eval (URef name) = readVar name
+eval (UWith defs q) = addFuns >> eval q
     where
-      funs = [(f, FunDef args [] body) | (UFunDef f args body _) <- defs]
-eval (UAppExpr f args) env = do
-  args' <- mapM (flip eval env) args
-  v <- maybeReadVar f env
+      addFuns = forM defs addFun
+      addFun (UFunDef f args body _) = modify ((f,FunDef args [] body):)
+eval (UAppExpr f args) = do
+  args' <- mapM eval args
+  v <- maybeReadVar f
   case v of
-    Just fundef -> evalFunDef fundef args' env
-    Nothing     -> evalApp f args'
-eval UModules _env = queryDb Mod (modpath "all")
-eval UFiles _env = queryDb File (filepath "all")
-eval UAtFunction _env = do
+    Just fundef -> evalApp fundef args'
+    Nothing     -> foldM g (section f) args'
+        where g f' a = evalApp f' [a]
+eval UModules = queryDb Mod (modpath "all")
+eval UFiles = queryDb File (filepath "all")
+eval UAtFunction = do
   arg <- getArg
   f <- callDb' lib_args "function" [arg] (throwError "atFunction: no function at given position")
   return . Fun $ f
-eval UAtFile _env = do
+eval UAtFile = do
   arg <- getArg
   f <- callDb' lib_args "file" [arg] (throwError "atFile: no file at given position")
   return . File $ f
-eval UAtModule _env = do
+eval UAtModule = do
   arg <- getArg
   m <- callDb' lib_args "module" [arg] (throwError "atModule: no module at given position")
   return . Mod $ m
-eval UAtExpr _env = do
+eval UAtExpr = do
   arg <- getArg
   e <- callDb' lib_args "expression" [arg] (throwError "atExpression: no expression at given position")
   return . Expr $ e
-eval (UReturn e) env = do 
-  x <- eval e env
+eval (UReturn e) = do 
+  x <- eval e
   seq [x]
-eval (UTuple components) env = do
-  xs <- mapM (flip eval env) components
+eval (UTuple components) = do
+  xs <- mapM eval components
   return $ Tuple components xs
-eval (UStringLit s) _env = return $ String s
-eval (UNumLit i) _env = return $ Int i
-eval (UExprTypeLit t) _env = return $ ExprType t
-eval (UFunRecurLit fr) _env = return $ FunRecursivity fr
-eval (URelation rel p1 p2) env = do 
-  p1' <- eval p1 env
-  p2' <- eval p2 env
+eval (UStringLit s) = string s
+eval (UNumLit i) = int i
+eval (UBoolLit b) = bool b
+eval (UExprTypeLit t) = return $ ExprType t
+eval (UFunRecurLit fr) = return $ FunRecursivity fr
+eval (URelation rel p1 p2) = do 
+  p1' <- eval p1
+  p2' <- eval p2
   bool $ evalRel p1' rel p2'       
-eval (UGuard pred) env = do
-  Bool p <- eval pred env
+eval (UGuard pred) = do
+  Bool p <- eval pred
   if p 
   then seq [Unit]
   else seq []
@@ -273,50 +280,67 @@ concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
     where step (Seq xs) acc = xs ++ acc
 
-maybeReadVar :: Id -> Env -> Query (Maybe Value)
-maybeReadVar v env = return $ lookup v env
+maybeReadVar :: Id  -> Query (Maybe Value)
+maybeReadVar v = do 
+  env <- get
+  return $ lookup v env
 
-readVar :: Id -> Env -> Query Value
-readVar v env = case lookup v env of
-                  Just v  -> return v
-                  Nothing -> throwError ("undefined variable: " ++ v)
+readVar :: Id -> Query Value
+readVar v = do
+  env <- get
+  case lookup v env of
+    Just v  -> return v
+    Nothing -> throwError ("undefined variable: " ++ v)
 
-evalApp :: Id -> [Value] -> Query Value
-evalApp "name" [arg] = 
+section :: Id -> Value
+section f = Section f []
+
+evalApp' :: Id -> Value -> Query Value
+evalApp' f arg = evalApp (section f) [arg]
+
+evalApp :: Value -> [Value] -> Query Value
+evalApp (Section "name" []) [arg] = 
     case arg of
       Fun f      -> propertyDb String lib_function "name" f
       Mod m      -> propertyDb String lib_module "name" m
-      File f     -> evalApp "filename" [File f]
+      File _     -> evalApp' "filename" arg
       Rec r      -> propertyDb String lib_record "name" r
       TypeExpr t -> propertyDb String lib_typeExp "name" t
       Type t     -> propertyDb String lib_type "name" t
 -- TODO mit ad vissza a returntypes refactorerlben? (type vagy typeexpr?)
-evalApp "arity" [Fun f] = propertyDb Int lib_function "arity" f
-evalApp "loc" [arg]   = propertyDb Int metrics "metric" args
+evalApp (Section "arity" []) [Fun f] = propertyDb Int lib_function "arity" f
+evalApp (Section "loc" []) [arg]   = propertyDb Int metrics "metric" args
     where 
       args = ErlTuple [ErlAtom "line_of_code",ErlAtom typeTag,x]
       (typeTag, x) = case arg of
                        Fun f  -> ("function",f)
                        File f -> ("file",f)                      
-evalApp "not" [Bool pred] = bool . not $ pred
-evalApp "null" [Seq xs] = bool . null $ xs
-evalApp "∈" [a,Seq bs] = bool $ a `elem` bs
-evalApp "⊂" [Seq as,Seq bs] = bool $ as `Sq.all_in` bs
-evalApp "any_in" [Seq as,Seq bs] = bool $ as `Sq.any_in` bs
-evalApp "union" [Seq as,Seq bs] = seq $ as `union` bs
-evalApp "calls" [Fun f] = queryDb1 Fun (funpath "funcalls") f
-evalApp "functions" [Mod m] = queryDb1 Fun (modpath "locals") m
-evalApp "records" [File f] = queryDb1 Rec (filepath "records") f
-evalApp "exported" [Fun f] = propertyDb Bool lib_function "is_exported" f
-evalApp "file" [Mod m] = queryDb1 File (modpath "file") m
-evalApp "defmodule" [Fun f] = queryDb1 Mod (funpath "module") f
-evalApp "module" [File f] = queryDb1 Mod (filepath "module") f
-evalApp "path" [File f] = propertyDb String lib_file "path" f
-evalApp "dir" f = do 
-  String path <- evalApp "path" f
+evalApp (Section "not" []) [Bool pred] = bool . not $ pred
+evalApp (Section "null" []) [Seq xs] = bool . null $ xs
+evalApp (Section "∈" [a]) [Seq bs] = bool $ a `elem` bs
+evalApp (Section "⊂" [Seq as]) [Seq bs] = bool $ as `Sq.all_in` bs
+evalApp (Section "any_in" [Seq as]) [Seq bs] = bool $ as `Sq.any_in` bs
+evalApp (Section "∪" [Seq as]) [Seq bs] = seq $ as `union` bs
+evalApp (Section "calls" [Fun f]) [p] = do 
+  Seq funs <- queryDb1 Fun (funpath "funcalls") f
+  funs' <- filterM pred funs
+  seq funs'
+    where 
+      pred :: Value -> Query Bool
+      pred fun = do Bool b <- evalApp p [fun]
+                    return b
+evalApp (Section "functions" []) [Mod m] = queryDb1 Fun (modpath "locals") m
+evalApp (Section "records" []) [File f] = queryDb1 Rec (filepath "records") f
+evalApp (Section "exported" []) [Fun f] = propertyDb Bool lib_function "is_exported" f
+evalApp (Section "file" []) [Mod m] = queryDb1 File (modpath "file") m
+evalApp (Section "defmodule" []) [Fun f] = queryDb1 Mod (funpath "module") f
+evalApp (Section "module" []) [File f] = queryDb1 Mod (filepath "module") f
+evalApp (Section "path" []) [File f] = propertyDb String lib_file "path" f
+evalApp (Section "dir" []) [f] = do 
+  String path <- evalApp' "path" f
   return . String . takeDirectory $ path
-evalApp "filename" f = do
-  String path <- evalApp "path" f
+evalApp (Section "filename" []) [f] = do
+  String path <- evalApp' "path" f
   return . String . takeFileName $ path
 {-
 evalApp UTypeOf [arg] = 
@@ -328,16 +352,16 @@ evalApp UTypeOf [arg] =
 
 -- evalApp URecursivity [Fun f] = wrap . Sq.frecursive $ f
 
-evalApp "returns" [Fun f] = queryDb1 Type path f
+evalApp (Section "returns" []) [Fun f] = queryDb1 Type path f
     where path = GSeq [ funpath "spec"
                       , specpath "returntypes"
                       ] -- todo: typexp -> namedtype konverzio
-evalApp "origin" [Expr expr] = do
+evalApp (Section "origin" []) [Expr expr] = do
   es <- callDb dataflow "reach" args
   wrap Expr es
     where args = [ErlList [expr], ErlList [ErlAtom "back"]]
-evalApp "fields" [Rec r] = queryDb1 RecField (recpath "fields") r
-evalApp "references" [Fun f] = queryDb1 Expr path f
+evalApp (Section "fields" []) [Rec r] = queryDb1 RecField (recpath "fields") r
+evalApp (Section "references" []) [Fun f] = queryDb1 Expr path f
     where 
       path = All [ funpath "applications"
                  , funpath "implicits"
@@ -351,29 +375,38 @@ evalApp UReferences [arg] =
       Rec r      -> wrap . Sq.rreferences $ r
       RecField f -> wrap . Sq.fieldReferences $ f
 -}
-evalApp "expressions" [Fun f] = queryDb1 Expr path f
+evalApp (Section "expressions" []) [Fun f] = queryDb1 Expr path f
     where 
       path = GSeq [ funpath "definition"
                   , formpath "clauses"
                   , clausepath "exprs"
                   ]
-evalApp "expressions" [Expr e] = throwError "unimplemented"
-evalApp "max" [Seq xs] = seq . Sq.max $ xs
-evalApp "min" [Seq xs] = seq . Sq.min $ xs
-evalApp "average" [Seq xs] = seq . map Int . Sq.average $ ns
+evalApp (Section "expressions" []) [Expr e] = throwError "unimplemented"
+evalApp (Section "max" []) [Seq xs] = seq . Sq.max $ xs
+evalApp (Section "min" []) [Seq xs] = seq . Sq.min $ xs
+evalApp (Section "average" []) [Seq xs] = seq . map Int . Sq.average $ ns
     where ns = [n | Int n <- xs]
-evalApp "length" [Chain c] = int . length . getChain $ c
-evalApp "distinct" [Chain c] = chain $ fChain nub c
 
-evalFunDef :: Value -> [Value] -> Env -> Query Value
-evalFunDef (FunDef argNames ps body) params env =
+evalApp (Section "length" []) [Chain c] = int . length . getChain $ c
+evalApp (Section "distinct" []) [Chain c] = chain $ fChain nub c
+evalApp (Section "const" [a]) [_] = return a
+evalApp (Section f args) [arg] = return $ Section f (args ++ [arg])
+evalApp (FunDef argNames ps body) params =
     let (defined,argNames') = splitAt (length params) argNames
         defined' = zip defined params ++ ps
     in
       case argNames' of
-        [] -> eval body (defined' ++ env)
+        [] -> do
+          env <- get
+          modify (defined' ++)
+          result <- eval body
+          put env
+          return result
         _  -> return (FunDef argNames' defined' body)
-evalFunDef _ _ _ = error "evalFunDef: not function definition"
+evalApp _ _ = error "evalApp: not function"
+
+string :: String -> Query Value
+string = return . String
 
 int :: Int -> Query Value
 int = return . Int
@@ -399,20 +432,20 @@ getChain (Sq.Recursive xs)  = xs
 
 showValue :: Value -> Query String
 showValue f@(File _)   = do
-  String name <- evalApp "filename" [f]
+  String name <- evalApp' "filename" f
   return name  
 showValue m@(Mod _)    = do 
-  String s <- evalApp "name" [m]
+  String s <- evalApp' "name" m
   return s
 showValue f@(Fun _)    = do 
-  String name <- evalApp "name" [f]
-  Int arity <- evalApp "arity" [f]
+  String name <- evalApp' "name" f
+  Int arity <- evalApp' "arity" f
   return $ name ++ "/" ++ show arity
 showValue r@(Rec _)    = do
-  String s <- evalApp "name" [r]
+  String s <- evalApp' "name" r
   return s
 showValue t@(Type _)   = do
-  String s <- evalApp "name" [t]
+  String s <- evalApp' "name" t
   return s
 showValue (Expr e)     = do
   s <- callDb syntax "flat_text2" [e]
