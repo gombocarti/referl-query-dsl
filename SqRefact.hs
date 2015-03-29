@@ -276,9 +276,20 @@ makeFun (UFunComp args) = \v -> let Seq xs = foldr step (Seq [v]) args in xs
       step f (Seq val) = concatValue $ map (\arg -> evalApp f [arg]) val
 -}
 
+makeFun :: UQuery -> Value -> Query Value
+makeFun (URef f) v = evalApp' f v
+makeFun (UFunComp args) v = foldM step (Seq [v]) (reverse args)
+    where 
+      step (Seq xs) f = concatValueM $ mapM (evalApp' f) xs
+
 concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
     where step (Seq xs) acc = xs ++ acc
+
+concatValueM :: Query [Value] -> Query Value
+concatValueM m = do
+  xs <- m
+  return $ concatValue xs
 
 maybeReadVar :: Id  -> Query (Maybe Value)
 maybeReadVar v = do 
@@ -321,7 +332,9 @@ evalApp (Section "∈" [a]) [Seq bs] = bool $ a `elem` bs
 evalApp (Section "⊂" [Seq as]) [Seq bs] = bool $ as `Sq.all_in` bs
 evalApp (Section "any_in" [Seq as]) [Seq bs] = bool $ as `Sq.any_in` bs
 evalApp (Section "∪" [Seq as]) [Seq bs] = seq $ as `union` bs
-evalApp (Section "calls" [Fun f]) [p] = do 
+evalApp (Section "calls" []) arg = evalApp (Section "callsP" arg) [p]
+    where p = (Section "const" [Bool True])
+evalApp (Section "callsP" [Fun f]) [p] = do 
   Seq funs <- queryDb1 Fun (funpath "funcalls") f
   funs' <- filterM pred funs
   seq funs'

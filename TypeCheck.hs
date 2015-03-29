@@ -90,8 +90,6 @@ check UAtFile = return $ UAtFile ::: File
 check UAtModule = return $ UAtModule ::: Mod
 check UAtFunction = return $ UAtFunction ::: Fun
 check UAtExpr = return $ UAtExpr ::: Expr
-check (UAppExpr "calls" args) | length args == 1 =
-  check (UAppExpr "calls" (args ++ [UAppExpr "const" [UBoolLit True]]))
 check (UAppExpr f args) = do
   defining <- getFunDef
   when (f `elem` defining) (throwError "recursion is not supported")
@@ -172,7 +170,7 @@ typeCheck f t args = fst <$> tcheck t args [] 1
     where
       tcheck :: Typ -> [Typ] -> TEnv-> Int -> QCheck (Typ,TEnv)
       tcheck a@(_ :->: _) [] env _ind =
-          return (a,env)
+          return (subs a env,env)
       tcheck a@(_ :->: _) ((constr :=>: c) : xs) env ind = do
         res@(_,env') <- tcheck a (c : xs) env ind
         checkConst constr env'
@@ -228,9 +226,19 @@ typeCheck f t args = fst <$> tcheck t args [] 1
 
       argsCount = fArgs t 0
 
+      fArgs :: Typ -> Int -> Int
       fArgs (_ :=>: b) n = fArgs b n
       fArgs (_ :->: b) n = fArgs b (n + 1)
       fArgs _          n = n
+
+      subs :: Typ -> TEnv -> Typ
+      subs (a :->: b) env = subs a env :->: subs b env
+      subs (Chain a) env = Chain (subs a env)
+      subs (List a) env = List (subs a env)
+      subs a env | typeVar a = case lookup a env of
+                                 Just t -> t
+                                 Nothing -> a
+                 | otherwise = a
 
 getTypeVar (Named a) = a
 getTypeVar (Referencable a) = a
@@ -269,7 +277,8 @@ funtypes =
     , ("arity", Fun :->: Int)
     , ("loc", MultiLine a :=>: a :->: List Int)
     , ("null", List a :->: Bool)
-    , ("calls", Fun :->: (Fun :->: Bool) :->: List Fun)
+    , ("calls", Fun :->: List Fun)
+    , ("callsP", Fun :->: (Fun :->: Bool) :->: List Fun)
     , ("path",  File :->: FilePath)
     , ("directory", File :->: FilePath)
     , ("filename", File :->: FilePath)
