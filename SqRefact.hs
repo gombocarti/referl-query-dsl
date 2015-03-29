@@ -133,11 +133,11 @@ eval (UGroupBy f q) = do
       criteria = (==) `on` fst
       merge xs = (fst . head $ xs, Seq (map snd xs))
 --eval (UVarExpr v) env = readVar v env
-{-
-eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
+eval (UAppExpr "closureN" [n,fs,x]) = do
+  Int n' <- eval n
+  x' <- eval x
+  Seq <$> closureNM n' f x'
     where f      = makeFun fs
-          Int n' = eval n env
--}
 eval (UAppExpr "lfp" [fs,x]) = do
   x' <- eval x
   Seq <$> lfpM f x'
@@ -303,6 +303,14 @@ lfpM f x = loop [] [x]
         if new' `subset` all
         then return all
         else loop all new'            
+
+closureNM :: Int -> (Value -> Query [Value]) -> Value -> Query [Value]
+closureNM n f x = loop n [x]
+    where 
+      loop 0 xs = return xs
+      loop m xs = do
+        xs' <- concat <$> mapM f xs
+        loop (m - 1) (union xs xs')  -- foldM
 
 concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
