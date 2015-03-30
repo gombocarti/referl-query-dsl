@@ -50,6 +50,7 @@ lib_file = "reflib_file"
 lib_module = "reflib_module"
 lib_function = "reflib_function"
 lib_record = "reflib_record"
+lib_recordfield = "reflib_record_field"
 lib_spec   = "reflib_spec"
 lib_type   = "reflib_type"
 lib_typeExp = "reflib_typexp"
@@ -70,6 +71,7 @@ funpath    = GPath lib_function
 clausepath = GPath lib_clause
 formpath   = GPath lib_form
 recpath    = GPath lib_record
+recfieldpath = GPath lib_recordfield
 specpath   = GPath lib_spec
 dynfunpath = GPath lib_dynfun
 
@@ -458,13 +460,12 @@ evalApp (Section "references" []) [Fun f] = queryDb1 Expr path f
                  , funpath "impexps"
                  , dynfunpath "dynfun_call"
                  ]
-{-
-evalApp UReferences [arg] = 
-    case arg of
-      Fun f      -> wrap . Sq.freferences $ f
-      Rec r      -> wrap . Sq.rreferences $ r
-      RecField f -> wrap . Sq.fieldReferences $ f
--}
+evalApp (Section "references" []) [Fun f] =
+    queryDb1' Expr lib_haskell "function_references" f
+evalApp (Section "references" []) [Rec f] = 
+    queryDb1 Expr (recpath "references") f
+evalApp (Section "references" []) [RecField f] =
+    queryDb1 Expr (recfieldpath "references") f
 evalApp (Section "expressions" []) [Fun f] = queryDb1 Expr path f
     where 
       path = GSeq [ funpath "definition"
