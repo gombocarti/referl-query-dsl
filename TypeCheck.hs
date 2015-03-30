@@ -284,7 +284,7 @@ funtypes =
     , ("filename", File :->: FilePath)
     , ("file",  Mod :->: List File)
     , ("module", File :->: List Mod)
-    , ("defmodule", Fun :->: Mod)
+    , ("defmodule", Fun :->: List Mod)
     , ("records",  File :->: List Record)
     , ("exported", Fun :->: Bool)
     , ("recursivity",  Fun :->: FunRecursivity)

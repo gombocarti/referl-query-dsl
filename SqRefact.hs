@@ -518,7 +518,12 @@ showValue m@(Mod _)    = do
 showValue f@(Fun _)    = do 
   String name <- evalApp' "name" f
   Int arity <- evalApp' "arity" f
-  return $ name ++ "/" ++ show arity
+  defmod <- evalApp' "defmodule" f
+  case defmod of
+    Seq []    -> return $ name ++ "/" ++ show arity
+    Seq [mod] -> do
+                String modname <- evalApp' "name" mod
+                return $ modname ++":" ++ name ++ "/" ++ show arity
 showValue r@(Rec _)    = do
   String s <- evalApp' "name" r
   return s
