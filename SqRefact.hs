@@ -3,7 +3,7 @@ module SqRefact where
 import Prelude hiding (seq,mod)
 import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..))
 import Foreign.Erlang
-import Data.List (union,nub,groupBy,intercalate)
+import Data.List (union,nub,groupBy,intercalate,partition)
 import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
 import Control.Monad.State
@@ -12,7 +12,7 @@ import Data.Functor ((<$>))
 import Data.Function (on)
 import System.FilePath (takeFileName,takeDirectory)
 import Data.String.Utils (strip)
-import Sq (subset)
+import Sq (subset,Chain(..))
 
 import qualified Sq
 
@@ -147,9 +147,11 @@ eval (UAppExpr "iteration" [n,fs,x]) = do
   x' <- eval x
   Seq <$> iterationM n' f x'
     where f      = makeFun fs
-{-
-eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
+eval (UAppExpr "chainInf" [fs,x]) = do 
+  x' <- eval x
+  Seq <$> chainInfM f x'
     where f = makeFun fs
+{-
 --eval (UAppExpr UChainN [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
 --    where f = makeFun fs
 -}
@@ -320,6 +322,30 @@ iterationM n f x = loop n [x]
           loop m xs = do
             xs' <- concat <$> mapM f xs
             loop (m - 1) xs'
+
+chainInfM :: (Value -> Query [Value]) -> Value -> Query [Value]
+chainInfM f x = do finished <- loop [] [Incomplete [x]]
+                   return $ map Chain finished
+    where loop finished []         = return finished
+          loop finished unfinished = do
+            new <- concat <$> mapM cont unfinished
+            let (unfinished', finished') = split new
+            loop (finished' ++ finished) unfinished'
+
+          cont (Incomplete chain@(z:_)) = do
+            xs <- f z
+            case xs of
+              [] -> return [Complete chain]
+              ys -> return [classify y chain | y <- ys]
+
+          classify y chain | y `elem` chain = Recursive chain
+                           | otherwise      = Incomplete (y:chain)
+
+          split chains = partition isInComplete chains 
+
+          isInComplete (Incomplete _) = True
+          isInComplete _              = False
+
 
 concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
@@ -512,6 +538,15 @@ showValue (Grouped xs) = unlines <$> mapM showGroup xs
             sx <- showValue x
             sys <- showValue ys
             return $ sx ++ unlines ["  " ++ sy | sy <- words sys]
+showValue (Chain (Incomplete chain)) = do
+  s <- mapM showValue (reverse chain)
+  return $ unwords s ++ "..."
+showValue (Chain (Complete chain)) = do
+  s <- mapM showValue (reverse chain)
+  return $ unwords s
+showValue (Chain (Recursive chain)) = do
+  s <- mapM showValue (reverse chain)
+  return $ unwords s ++ " *"
 
 showTuples :: [Value] -> Query String
 showTuples ts@((Tuple components _):_) = do
