@@ -58,6 +58,7 @@ lib_form  = "reflib_form"
 lib_expr = "reflib_expression"
 lib_dynfun = "reflib_dynfun"
 lib_args = "reflib_args"
+lib_haskell = "reflib_haskell"
 dataflow  = "refanal_dataflow"
 query_lib = "reflib_query"
 metrics = "refusr_metrics"
@@ -254,6 +255,11 @@ queryDb1 :: (ErlType -> Value) -> GraphPath -> ErlType -> Query Value
 queryDb1 f p x = do 
   p' <- evalPath p
   y <- callDb query_lib "exec" [x,p']
+  wrap f y
+
+queryDb1' :: (ErlType -> Value) -> ErlModule-> ErlFunction -> ErlType -> Query Value
+queryDb1' f mod fun x = do
+  y <- callDb mod fun [x]
   wrap f y
 
 propertyDb :: Erlang a => (a -> Value) -> ErlModule -> ErlFunction -> ErlType -> Query Value
@@ -465,7 +471,8 @@ evalApp (Section "expressions" []) [Fun f] = queryDb1 Expr path f
                   , formpath "clauses"
                   , clausepath "exprs"
                   ]
-evalApp (Section "expressions" []) [Expr e] = throwError "unimplemented"
+evalApp (Section "expressions" []) [Expr e] = 
+    queryDb1' Expr lib_haskell "subexpressions" e
 evalApp (Section "max" []) [Seq xs] = seq . Sq.max $ xs
 evalApp (Section "min" []) [Seq xs] = seq . Sq.min $ xs
 evalApp (Section "average" []) [Seq xs] = seq . map Int . Sq.average $ ns
