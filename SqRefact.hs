@@ -453,13 +453,6 @@ evalApp (Section "origin" []) [Expr expr] = do
   wrap Expr es
     where args = [ErlList [expr], ErlList [ErlAtom "back"]]
 evalApp (Section "fields" []) [Rec r] = queryDb1 RecField (recpath "fields") r
-evalApp (Section "references" []) [Fun f] = queryDb1 Expr path f
-    where 
-      path = All [ funpath "applications"
-                 , funpath "implicits"
-                 , funpath "impexps"
-                 , dynfunpath "dynfun_call"
-                 ]
 evalApp (Section "references" []) [Fun f] =
     queryDb1' Expr lib_haskell "function_references" f
 evalApp (Section "references" []) [Rec f] = 
