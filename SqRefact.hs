@@ -294,7 +294,13 @@ makeFun app@(UAppExpr _ _) v = do f <- eval app
 makeFun (UFunComp args) v = do Seq xs <- foldM step (Seq [v]) (reverse args)
                                return xs
     where 
-      step (Seq xs) f = concatValueM $ mapM (evalApp' f) xs
+      step (Seq xs) (URef f) = concatValueM $ mapM (evalApp' f) xs
+      step (Seq xs) app@(UAppExpr _ _) = do
+        f <- eval app
+        xs' <- mapM (\x -> evalApp f [x]) xs
+        return $ concatValue xs'
+      step (Seq _) _ = error "step: not function argument"
+      step _       _ = error "step: not sequence argument"
 
 lfpM :: (Value -> Query [Value]) -> Value -> Query [Value]
 lfpM f x = loop [] [x]

@@ -98,10 +98,11 @@ check (UAppExpr f args) = do
   ft <- checkApp f argtypes'
   return $ (UAppExpr f args') ::: ft
 check (UFunComp args) = do
-  types <- mapM getType args
-  let h:t = reverse types
+  targs <- mapM check args
+  let (args', types) = unzip [(arg, t) | arg ::: t <- targs]
+      h:t = reverse types
   compType <- foldM step h t
-  return $ UFunComp args ::: compType
+  return $ UFunComp args' ::: compType
     where
       step :: Typ -> Typ -> QCheck Typ
       step compType atype = fst <$> compose atype compType []

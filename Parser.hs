@@ -110,7 +110,7 @@ app = parens app
               return (UAppExpr f args))
               <* whiteSpace
       <?> "function application"
-          where argument = numLit <|> stringLit <|> initial <|> parens (relation <|> app) <|> ref <|> composition <|> set
+          where argument = numLit <|> stringLit <|> initial <|> parens (relation <|> composition <|> app) <|> ref <|> set
 
 infixSetOp :: String -> QParser UQuery
 infixSetOp op = 
@@ -129,8 +129,8 @@ subset = infixSetOp "⊆" <?> "subset of"
 element :: QParser UQuery
 element = infixSetOp "∈" <?> "element of"
 
-funref :: QParser Id
-funref = name <?> "function reference"
+funref :: QParser UQuery
+funref = URef <$> name <?> "function reference"
 
 name :: QParser String
 name = do
@@ -151,7 +151,7 @@ composition = do
 -}
 
 composition :: QParser UQuery
-composition = UFunComp <$> funref `sepBy1` ring <?> "function composition"
+composition = UFunComp <$> (app <|> funref) `sepBy1` ring <?> "function composition"
 
 -- query = { var <- query | query }
 

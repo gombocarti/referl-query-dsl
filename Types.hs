@@ -31,7 +31,7 @@ data UQuery
     = UQuery UQuery  -- ^ Root of syntax tree
     | UAppExpr Id [UQuery]
     | UFunExpr Id
-    | UFunComp [Id]
+    | UFunComp [UQuery]
     | UBind UQuery UF
     | UFunDef Id [Id] UQuery SourcePos
     | UWith [UQuery] UQuery
