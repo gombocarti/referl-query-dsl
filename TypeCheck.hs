@@ -48,10 +48,13 @@ check (UQuery q) = do
   q' ::: t <- check q
   return $ UQuery q' ::: t
 check (UBind m (UF x body)) = do
-  m' ::: List tm <- check m
+  m' ::: tms <- check m
+  expect (List a) tms `catchError` addExpr m
+  let List tm = tms
   addVar x tm
   body' ::: List tbody <- check body 
   return $ UBind m' (UF x body') ::: List tbody
+    where a = TV 'a'
 check (UReturn x) = do
   x' ::: t <- check x
   return $ UReturn x' ::: List t
@@ -60,10 +63,13 @@ check (UTuple xs) = do
   let (ys,tys) = unzip [(y,ty) | y ::: ty <- xs']
   return $ UTuple ys ::: Tuple tys
 check (UGroupBy f q) = do
-  q' ::: List tq <- check q
+  q' ::: tq <- check q
+  expect (List a) tq `catchError` addExpr q
+  let List tq' = tq
   ft <- getType f
   apptype <- typeCheck f ft [tq]
-  return $ UGroupBy f q' ::: Grouped apptype tq
+  return $ UGroupBy f q' ::: Grouped apptype tq'
+    where a = TV 'a'
 check (UWith defs q) = do
   defs' <- mapM check defs
   let ds = [d | d ::: _ <- defs']
@@ -115,11 +121,14 @@ check (URelation op q1 q2) = do
   return $ (URelation op q1' q2') ::: Bool
 check (UGuard p) = do
   p' ::: t <- check p
-  expect Bool t
+  expect Bool t `catchError` addExpr p
   return $ UGuard p' ::: List Unit
 check q@(UNumLit _) = return $ q ::: Int
 check q@(UStringLit _) = return $ q ::: String
 check q@(UBoolLit _) = return $ q ::: Bool
+
+addExpr :: UQuery -> String -> QCheck ()
+addExpr q err = throwError (err ++ "\nin expression " ++ show q)
 
 -- |Checks the argument types.
 checkApp :: Id -> [Typ] -> QCheck Typ
@@ -369,7 +378,7 @@ checkConst constr env = case constr of
                        Just t  -> return t
                        Nothing -> throwError ("constraint error: " ++ show a)
 
-compose :: Typ -> Typ -> TypEnv ->  QCheck (Typ,[(Typ,Typ)])
+compose :: Typ -> Typ -> TEnv ->  QCheck (Typ,TEnv)
 compose (const :=>: f) g@(a :->: b) env = do
   (t, env') <- compose f g env
   checkConst const env'
