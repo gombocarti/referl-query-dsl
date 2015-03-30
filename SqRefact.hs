@@ -214,17 +214,6 @@ erlError :: ErlType -> Bool
 erlError (ErlTuple (ErlAtom x:_)) = x `elem` ["badrpc","reflib_error"]
 erlError _ = False
 
-
--- path UModules = return . GPath $ ErlList [ErlTuple [ErlAtom "module",ErlTuple [ErlAtom "name", ErlAtom "/=", ErlList []]]]
-{-
-pathFun UFunctions = 
-    return . GPath $ ErlList [ErlTuple 
-                              [ErlAtom "func",
-                               ErlTuple [ErlTuple [ErlAtom "opaque",ErlAtom "==",ErlAtom "false"],
-                                         ErlAtom "and",
-                                         ErlTuple [ErlAtom "type",ErlAtom "==",ErlAtom "regular"]]]]
--}
-
 callDb :: ErlModule -> ErlFunction -> [ErlType] -> Query ErlType
 callDb mod fun args = do
   db <- ask
@@ -285,14 +274,6 @@ evalRel a Regexp b = s =~ regex
     where String s     = a
           String regex = b
                    
-{-
--- works for all function of type a -> [a] for some a:
-makeFun (UFunRef f) = \v -> let Seq xs = evalApp f [v] in xs
-makeFun (UFunComp args) = \v -> let Seq xs = foldr step (Seq [v]) args in xs
-    where
-      step f (Seq val) = concatValue $ map (\arg -> evalApp f [arg]) val
--}
-
 makeFun :: UQuery -> Value -> Query [Value]
 makeFun (URef f) v = do Seq xs <- evalApp' f v
                         return xs
@@ -309,6 +290,7 @@ makeFun (UFunComp args) v = do Seq xs <- foldM step (Seq [v]) (reverse args)
         return $ concatValue xs'
       step (Seq _) _ = error "step: not function argument"
       step _       _ = error "step: not sequence argument"
+makeFun _ _ = error "makeFun: not fuction argument"
 
 lfpM :: (Value -> Query [Value]) -> Value -> Query [Value]
 lfpM f x = loop [] [x]
@@ -379,8 +361,8 @@ readVar :: Id -> Query Value
 readVar v = do
   env <- get
   case lookup v env of
-    Just v  -> return v
-    Nothing -> throwError ("undefined variable: " ++ v)
+    Just val -> return val
+    Nothing  -> throwError ("undefined variable: " ++ v)
 
 section :: Id -> Value
 section f = Section f []
@@ -526,11 +508,11 @@ showValue f@(Fun _)    = do
   String name <- evalApp' "name" f
   Int arity <- evalApp' "arity" f
   defmod <- evalApp' "defmodule" f
-  prefix <-  case defmod of
-    Seq []    -> return ""
-    Seq [mod] -> do
-                String modname <- evalApp' "name" mod
-                return $ modname ++":"
+  prefix <- case defmod of
+              Seq []    -> return ""
+              Seq [mod] -> do
+                           String modname <- evalApp' "name" mod
+                           return $ modname ++":"
   return $ prefix ++ name ++ "/" ++ show arity
 showValue r@(Rec _)    = do
   String s <- evalApp' "name" r
