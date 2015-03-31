@@ -82,11 +82,16 @@ type Arg = (File,FilePosition)
 
 getArg :: Query ErlType
 getArg = do
-  Just (file,pos) <- lift . lift $ ask
-  return $ ErlList [ erlPair (ErlAtom "ask_missing") (ErlAtom "false")
-                   , erlPair (ErlAtom "file") file
-                   , erlPair (ErlAtom "position") pos
-                   ]
+  arg <- lift . lift $ ask
+  case arg of 
+    Just (file,pos) -> return $ refactArg file pos
+    Nothing         -> throwError "no file and position are given"
+  where
+    refactArg file pos = ErlList
+         [ erlPair (ErlAtom "ask_missing") (ErlAtom "false")
+         , erlPair (ErlAtom "file") file
+         , erlPair (ErlAtom "position") pos
+         ]
 
 erlPair :: (Erlang a, Erlang b) => a -> b -> ErlType
 erlPair a b = ErlTuple [toErlang a,toErlang b]
@@ -154,10 +159,11 @@ eval (UAppExpr "chainInf" [fs,x]) = do
   x' <- eval x
   Seq <$> chainInfM f x'
     where f = makeFun fs
-{-
---eval (UAppExpr UChainN [fs,v]) env = wrap $ Sq.chainInf f (eval v env)
---    where f = makeFun fs
--}
+eval (UAppExpr "chainN" [n,fs,x]) = do
+  Int n' <- eval n
+  x' <- eval x
+  Seq <$> chainNM n' f x'
+    where f = makeFun fs
 eval (URef name) = readVar name
 eval (UWith defs q) = addFuns >> eval q
     where
@@ -208,6 +214,7 @@ eval (UGuard pred) = do
   if p 
   then seq [Unit]
   else seq []
+eval x = error (show x)
 
 -- noob
 erlError :: ErlType -> Bool
@@ -319,28 +326,39 @@ iterationM n f x = loop n [x]
             xs' <- concat <$> mapM f xs
             loop (m - 1) xs'
 
+chainNM :: Int -> (Value -> Query [Value]) -> Value -> Query [Value]
+chainNM n f x = do chains <- loop (n - 1) [] [Incomplete [x]]
+                   return $ map Chain chains
+    where loop 0 finished unfinished = return (unfinished ++ finished)
+          loop n finished []         = return finished
+          loop n finished unfinished = do
+            new <- concat <$> mapM (flip cont f) unfinished
+            let (unfinished',finished') = split new
+            loop (n - 1) (finished' ++ finished) unfinished'
+            
+
 chainInfM :: (Value -> Query [Value]) -> Value -> Query [Value]
 chainInfM f x = do finished <- loop [] [Incomplete [x]]
                    return $ map Chain finished
     where loop finished []         = return finished
           loop finished unfinished = do
-            new <- concat <$> mapM cont unfinished
+            new <- concat <$> mapM (flip cont f) unfinished
             let (unfinished', finished') = split new
             loop (finished' ++ finished) unfinished'
 
-          cont (Incomplete chain@(z:_)) = do
-            xs <- f z
-            case xs of
-              [] -> return [Complete chain]
-              ys -> return [classify y chain | y <- ys]
+cont (Incomplete chain@(z:_)) f = do
+  xs <- f z
+  case xs of
+    [] -> return [Complete chain]
+    ys -> return [classify y chain | y <- ys]
 
-          classify y chain | y `elem` chain = Recursive chain
-                           | otherwise      = Incomplete (y:chain)
+classify y chain | y `elem` chain = Recursive chain
+                 | otherwise      = Incomplete (y:chain)
 
-          split chains = partition isInComplete chains 
+split chains = partition isInComplete chains 
 
-          isInComplete (Incomplete _) = True
-          isInComplete _              = False
+isInComplete (Incomplete _) = True
+isInComplete _              = False
 
 
 concatValue :: [Value] -> Value
