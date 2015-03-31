@@ -330,11 +330,11 @@ chainNM :: Int -> (Value -> Query [Value]) -> Value -> Query [Value]
 chainNM n f x = do chains <- loop (n - 1) [] [Incomplete [x]]
                    return $ map Chain chains
     where loop 0 finished unfinished = return (unfinished ++ finished)
-          loop n finished []         = return finished
-          loop n finished unfinished = do
+          loop _ finished []         = return finished
+          loop m finished unfinished = do
             new <- concat <$> mapM (flip cont f) unfinished
             let (unfinished',finished') = split new
-            loop (n - 1) (finished' ++ finished) unfinished'
+            loop (m - 1) (finished' ++ finished) unfinished'
             
 
 chainInfM :: (Value -> Query [Value]) -> Value -> Query [Value]
