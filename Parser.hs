@@ -39,7 +39,15 @@ lexer = T.makeTokenParser sqDef
 
 -- lexer = L.haskell
 
-braces :: QParser a -> QParser a
+braces,lexeme,parens :: QParser a -> QParser a
+commaSep1 :: QParser a -> QParser [a]
+comma :: QParser String
+identifier,stringLiteral :: QParser String
+symbol :: String -> QParser String
+reserved :: String -> QParser ()
+reservedOp :: String -> QParser ()
+whiteSpace :: QParser ()
+decimal :: QParser Integer
 
 lexeme        = T.lexeme lexer
 identifier    = T.identifier lexer
@@ -56,11 +64,6 @@ commaSep1     = T.commaSep1 lexer
 
 type QParser a = ParsecT String (Maybe UQuery) IO a
 
-{-             
-query :: QParser UQuery
-query = braces bind <?> "query"
--}
-
 set :: QParser UQuery
 set = braces q <?> "query"
     where q = do
@@ -71,14 +74,6 @@ set = braces q <?> "query"
             b <- bind
             putState x
             return b
-
-{-
-aggregation :: QParser UQuery
-aggregation = do
-  f <- identifier
-  q <- set
-  return $ UAppExpr (UFName f) [q]
--}
 
 groupby :: QParser UQuery
 groupby = do
@@ -151,7 +146,11 @@ composition = do
 -}
 
 composition :: QParser UQuery
-composition = UFunComp <$> (app <|> funref) `sepBy1` ring <?> "function composition"
+composition = do
+  first <- try ((app <|> funref) <* ring)
+  remaining <- (app <|> funref) `sepBy1` ring
+  return (UFunComp (first : remaining))
+  <?> "function composition"
 
 -- query = { var <- query | query }
 
