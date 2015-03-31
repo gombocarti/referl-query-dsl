@@ -332,7 +332,7 @@ chainNM n f x = do chains <- loop (n - 1) [] [Incomplete [x]]
     where loop 0 finished unfinished = return (unfinished ++ finished)
           loop _ finished []         = return finished
           loop m finished unfinished = do
-            new <- concat <$> mapM (flip cont f) unfinished
+            new <- concat <$> mapM (cont f) unfinished
             let (unfinished',finished') = split new
             loop (m - 1) (finished' ++ finished) unfinished'
             
@@ -342,24 +342,28 @@ chainInfM f x = do finished <- loop [] [Incomplete [x]]
                    return $ map Chain finished
     where loop finished []         = return finished
           loop finished unfinished = do
-            new <- concat <$> mapM (flip cont f) unfinished
+            new <- concat <$> mapM (cont f) unfinished
             let (unfinished', finished') = split new
             loop (finished' ++ finished) unfinished'
 
-cont (Incomplete chain@(z:_)) f = do
+cont :: Eq a => (a -> Query [a]) -> Chain a -> Query [Chain a]
+cont f (Incomplete chain@(z:_)) = do
   xs <- f z
   case xs of
     [] -> return [Complete chain]
     ys -> return [classify y chain | y <- ys]
+  where 
+    classify :: Eq a => a -> [a] -> Chain a
+    classify y chain | y `elem` chain = Recursive chain
+                     | otherwise      = Incomplete (y:chain)
+cont _ chain = return [chain]
 
-classify y chain | y `elem` chain = Recursive chain
-                 | otherwise      = Incomplete (y:chain)
-
+split :: [Chain a] -> ([Chain a],[Chain a])
 split chains = partition isInComplete chains 
 
+isInComplete :: Chain a -> Bool
 isInComplete (Incomplete _) = True
 isInComplete _              = False
-
 
 concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
