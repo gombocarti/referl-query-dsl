@@ -327,7 +327,7 @@ iterationM n f x = loop n [x]
             loop (m - 1) xs'
 
 chainNM :: Int -> (Value -> Query [Value]) -> Value -> Query [Value]
-chainNM n f x = do chains <- loop (n - 1) [] [Incomplete [x]]
+chainNM n f x = do chains <- loop n [] [Incomplete [x]]
                    return $ map Chain chains
     where loop 0 finished unfinished = return (unfinished ++ finished)
           loop _ finished []         = return finished
