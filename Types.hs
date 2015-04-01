@@ -55,7 +55,7 @@ data UQuery
     | UAtModule 
     | UAtFunction
     | UAtExpr
-      deriving (Eq)
+     deriving (Eq)
 --      deriving (Eq,Show)
 data TUQuery = UQuery ::: Typ
 
@@ -214,30 +214,61 @@ instance Show Typ where
 instance Show TUQuery where
     show (q ::: t) = show q ++ " :: " ++ show t
 
-instance Show UQuery where
-    show (URef name) = name
-    show (UAppExpr f args) = f ++ " " ++ unwords (map show args)
-    show (UBind a (UF _ (UReturn _))) = show a ++ " }"
-    show (UBind a (UF "()" b)) = show a ++ ", " ++ show b
-    show (UBind a (UF f b)) = f ++ " <- " ++ show a ++ ", " ++ show b
-    show (UReturn _) = ""
-    show (UWith defs q) = "with \n" ++ unlines (map show defs) ++ show q
-    show (UFunDef f args body _) = f ++ " " ++ unwords args ++ " = " ++ show body
-    show (UGuard g) = show g
-    show (URelation op a b) = show a ++ " " ++ show op ++ " " ++ show b
-    show (UQuery q) = showReturn q ++ show q
-    show UModules = "modules"
-    show UFiles   = "files"
-    show UAtModule = "atModule"
-    show UAtFile  = "atFile"
-    show UAtExpr = "atExpression"
-    show UAtFunction = "atFunction"
-    show (UStringLit s) = show s
-    show (UNumLit n) = show n
---    show (UBool b) = show b
 
-showReturn :: UQuery -> String
+instance Show UQuery where
+    showsPrec _ (URef name) = showString name
+    showsPrec d (UAppExpr f args) = showParen (d > appPrec) $
+                                    showString f .
+                                    showString " " .
+                                    foldr (.) (showString "") (map showArg args) 
+        where appPrec = 10
+              showArg arg = showsPrec (appPrec + 1) arg . showString " "
+    showsPrec d (UBind a (UF "()" b)) = showsPrec d a .
+                                        showString ", " .
+                                        showsPrec d b
+    showsPrec d (UBind a (UF x (UReturn _))) = showString x .
+                                               showString " <- " .
+                                               showsPrec d a .
+                                               showString " }"
+    showsPrec d (UBind a (UF f b)) = showString f .
+                                     showString  " <- " .
+                                     showsPrec d a .
+                                     showString ", " . 
+                                     showsPrec d b
+    showsPrec _ (UReturn _) = showString ""
+    showsPrec d (UWith defs q) = showString "with \n" . 
+                                 foldr (.) (showsPrec d q) (map showDef defs)
+        where showDef def = showsPrec d def . showString "\n"
+    showsPrec d (UFunDef f args body _) = showString f .
+                                          showString " " .
+                                          showArgs .
+                                          showString " = " .
+                                          showsPrec d body
+        where showArgs = foldr (.) (showString "") (map showString args)
+    showsPrec d (UGuard g) = showsPrec d g
+    showsPrec d (URelation op a b) = showParen (d > relPrec) $
+                                     showsPrec (relPrec + 1) a .
+                                     showString " " .
+                                     shows op .
+                                     showString " " .
+                                     showsPrec (relPrec + 1) b
+        where relPrec = 4
+    showsPrec d (UQuery q) = showReturn q . showsPrec d q
+    showsPrec _ UModules = showString "modules"
+    showsPrec _ UFiles   = showString "files"
+    showsPrec _ UAtModule = showString "atModule"
+    showsPrec _ UAtFile  = showString "atFile"
+    showsPrec _ UAtExpr = showString "atExpression"
+    showsPrec _ UAtFunction = showString "atFunction"
+    showsPrec _ (UStringLit s) = shows s
+    showsPrec _ (UNumLit n) = shows n
+    showsPrec _ (UBoolLit b) = shows b
+
+
+showReturn :: UQuery -> ShowS
 showReturn (UBind _ (UF _ q)) = showReturn q
-showReturn (UReturn ret)      = "{ " ++ show ret ++ " | "
-showReturn _ = ""
+showReturn (UReturn ret)      = showString "{ " .
+                                shows ret .
+                                showString " | "
+showReturn _ = showString ""
 
