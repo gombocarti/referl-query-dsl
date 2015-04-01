@@ -30,7 +30,9 @@ setType old new = do
 addVar :: Id -> Typ -> QCheck ()
 addVar v t = modify ((v,t):)
 
-type QCheck a = StateT Namespace (StateT [Id]  (WriterT [String] (Either String))) a
+type CallStack = [Id]
+
+type QCheck a = StateT Namespace (StateT CallStack (WriterT [String] (Either String))) a
 
 runQCheck :: QCheck a -> Namespace -> Either String ((a,Namespace),[String])
 runQCheck q ns = runWriterT (evalStateT (runStateT q ns) [])
@@ -199,8 +201,11 @@ typeCheck f t args = fst <$> tcheck t args [] 1
       tcheck _ (_:_) _env _ind = 
           tooManyParams f argsCount (length args)
       tcheck (List a) [] env ind = do
-        (resT, _) <- tcheck a [] env ind
-        return (List resT, env)
+        (aType, _) <- tcheck a [] env ind
+        return (List aType, env)
+      tcheck (Chain a) [] env ind = do
+        (aType, _) <- tcheck a [] env ind
+        return (Chain aType, env)      
       tcheck a [] env _ind
           | typeVar a = case lookup a env of
                           Just b -> return (b,env)
