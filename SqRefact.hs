@@ -558,7 +558,7 @@ showValue (Grouped xs) = unlines <$> mapM showGroup xs
             return $ sx ++ unlines ["  " ++ sy | sy <- words sys]
 showValue (Chain (Incomplete chain)) = do
   s <- mapM showValue (reverse chain)
-  return $ unwords s ++ "..."
+  return $ unwords s ++ " ..."
 showValue (Chain (Complete chain)) = do
   s <- mapM showValue (reverse chain)
   return $ unwords s
