@@ -38,7 +38,7 @@ data Value
     | Grouped [(Value,Value)]
     | Tuple [UQuery] [Value]
     | FunDef [Id] [(Id,Value)] UQuery
-    | Section Id [Value]
+    | Curried Id [Value]
       deriving (Show,Eq)
 
 instance Ord Value where
@@ -387,13 +387,13 @@ readVar v = do
     Nothing  -> throwError ("undefined variable: " ++ v)
 
 section :: Id -> Value
-section f = Section f []
+section f = Curried f []
 
 evalApp' :: Id -> Value -> Query Value
 evalApp' f arg = evalApp (section f) [arg]
 
 evalApp :: Value -> [Value] -> Query Value
-evalApp (Section "name" []) [arg] = 
+evalApp (Curried "name" []) [arg] = 
     case arg of
       Fun f      -> propertyDb String lib_function "name" f
       Mod m      -> propertyDb String lib_module "name" m
@@ -402,22 +402,22 @@ evalApp (Section "name" []) [arg] =
       TypeExpr t -> propertyDb String lib_typeExp "name" t
       Type t     -> propertyDb String lib_type "name" t
 -- TODO mit ad vissza a returntypes refactorerlben? (type vagy typeexpr?)
-evalApp (Section "arity" []) [Fun f] = propertyDb Int lib_function "arity" f
-evalApp (Section "loc" []) [arg]   = propertyDb Int metrics "metric" args
+evalApp (Curried "arity" []) [Fun f] = propertyDb Int lib_function "arity" f
+evalApp (Curried "loc" []) [arg]   = propertyDb Int metrics "metric" args
     where 
       args = ErlTuple [ErlAtom "line_of_code",ErlAtom typeTag,x]
       (typeTag, x) = case arg of
                        Fun f  -> ("function",f)
                        File f -> ("file",f)                      
-evalApp (Section "not" []) [Bool pred] = bool . not $ pred
-evalApp (Section "null" []) [Seq xs] = bool . null $ xs
-evalApp (Section "∈" [a]) [Seq bs] = bool $ a `elem` bs
-evalApp (Section "⊂" [Seq as]) [Seq bs] = bool $ as `Sq.all_in` bs
-evalApp (Section "any_in" [Seq as]) [Seq bs] = bool $ as `Sq.any_in` bs
-evalApp (Section "∪" [Seq as]) [Seq bs] = seq $ as `union` bs
-evalApp (Section "calls" []) arg = evalApp (Section "callsP" [p]) arg
-    where p = (Section "const" [Bool True])
-evalApp (Section "callsP" [p]) [Fun f] = do 
+evalApp (Curried "not" []) [Bool pred] = bool . not $ pred
+evalApp (Curried "null" []) [Seq xs] = bool . null $ xs
+evalApp (Curried "∈" [a]) [Seq bs] = bool $ a `elem` bs
+evalApp (Curried "⊂" [Seq as]) [Seq bs] = bool $ as `Sq.all_in` bs
+evalApp (Curried "any_in" [Seq as]) [Seq bs] = bool $ as `Sq.any_in` bs
+evalApp (Curried "∪" [Seq as]) [Seq bs] = seq $ as `union` bs
+evalApp (Curried "calls" []) arg = evalApp (Curried "callsP" [p]) arg
+    where p = (Curried "const" [Bool True])
+evalApp (Curried "callsP" [p]) [Fun f] = do 
   Seq funs <- queryDb1 Fun (funpath "funcalls") f
   funs' <- filterM pred funs
   seq funs'
@@ -425,17 +425,17 @@ evalApp (Section "callsP" [p]) [Fun f] = do
       pred :: Value -> Query Bool
       pred fun = do Bool b <- evalApp p [fun]
                     return b
-evalApp (Section "functions" []) [Mod m] = queryDb1 Fun (modpath "locals") m
-evalApp (Section "records" []) [File f] = queryDb1 Rec (filepath "records") f
-evalApp (Section "exported" []) [Fun f] = propertyDb Bool lib_function "is_exported" f
-evalApp (Section "file" []) [Mod m] = queryDb1 File (modpath "file") m
-evalApp (Section "defmodule" []) [Fun f] = queryDb1 Mod (funpath "module") f
-evalApp (Section "module" []) [File f] = queryDb1 Mod (filepath "module") f
-evalApp (Section "path" []) [File f] = propertyDb String lib_file "path" f
-evalApp (Section "dir" []) [f] = do 
+evalApp (Curried "functions" []) [Mod m] = queryDb1 Fun (modpath "locals") m
+evalApp (Curried "records" []) [File f] = queryDb1 Rec (filepath "records") f
+evalApp (Curried "exported" []) [Fun f] = propertyDb Bool lib_function "is_exported" f
+evalApp (Curried "file" []) [Mod m] = queryDb1 File (modpath "file") m
+evalApp (Curried "defmodule" []) [Fun f] = queryDb1 Mod (funpath "module") f
+evalApp (Curried "module" []) [File f] = queryDb1 Mod (filepath "module") f
+evalApp (Curried "path" []) [File f] = propertyDb String lib_file "path" f
+evalApp (Curried "dir" []) [f] = do 
   String path <- evalApp' "path" f
   return . String . takeDirectory $ path
-evalApp (Section "filename" []) [f] = do
+evalApp (Curried "filename" []) [f] = do
   String path <- evalApp' "path" f
   return . String . takeFileName $ path
 {-
@@ -448,38 +448,38 @@ evalApp UTypeOf [arg] =
 
 -- evalApp URecursivity [Fun f] = wrap . Sq.frecursive $ f
 
-evalApp (Section "returns" []) [Fun f] = queryDb1 Type path f
+evalApp (Curried "returns" []) [Fun f] = queryDb1 Type path f
     where path = GSeq [ funpath "spec"
                       , specpath "returntypes"
                       ] -- todo: typexp -> namedtype konverzio
-evalApp (Section "origin" []) [Expr expr] = do
+evalApp (Curried "origin" []) [Expr expr] = do
   es <- callDb dataflow "reach" args
   wrap Expr es
     where args = [ErlList [expr], ErlList [ErlAtom "back"]]
-evalApp (Section "fields" []) [Rec r] = queryDb1 RecField (recpath "fields") r
-evalApp (Section "references" []) [Fun f] =
+evalApp (Curried "fields" []) [Rec r] = queryDb1 RecField (recpath "fields") r
+evalApp (Curried "references" []) [Fun f] =
     queryDb1' Expr lib_haskell "function_references" f
-evalApp (Section "references" []) [Rec f] = 
+evalApp (Curried "references" []) [Rec f] = 
     queryDb1 Expr (recpath "references") f
-evalApp (Section "references" []) [RecField f] =
+evalApp (Curried "references" []) [RecField f] =
     queryDb1 Expr (recfieldpath "references") f
-evalApp (Section "expressions" []) [Fun f] = queryDb1 Expr path f
+evalApp (Curried "expressions" []) [Fun f] = queryDb1 Expr path f
     where 
       path = GSeq [ funpath "definition"
                   , formpath "clauses"
                   , clausepath "exprs"
                   ]
-evalApp (Section "expressions" []) [Expr e] = 
+evalApp (Curried "expressions" []) [Expr e] = 
     queryDb1' Expr lib_haskell "subexpressions" e
-evalApp (Section "max" []) [Seq xs] = seq . Sq.max $ xs
-evalApp (Section "min" []) [Seq xs] = seq . Sq.min $ xs
-evalApp (Section "average" []) [Seq xs] = seq . map Int . Sq.average $ ns
+evalApp (Curried "max" []) [Seq xs] = seq . Sq.max $ xs
+evalApp (Curried "min" []) [Seq xs] = seq . Sq.min $ xs
+evalApp (Curried "average" []) [Seq xs] = seq . map Int . Sq.average $ ns
     where ns = [n | Int n <- xs]
 
-evalApp (Section "length" []) [Chain c] = int . length . getChain $ c
-evalApp (Section "distinct" []) [Chain c] = chain $ fChain nub c
-evalApp (Section "const" [a]) [_] = return a
-evalApp (Section f args) [arg] = return $ Section f (args ++ [arg])
+evalApp (Curried "length" []) [Chain c] = int . length . getChain $ c
+evalApp (Curried "distinct" []) [Chain c] = chain $ fChain nub c
+evalApp (Curried "const" [a]) [_] = return a
+evalApp (Curried f args) [arg] = return $ Curried f (args ++ [arg])
 evalApp (FunDef argNames ps body) params =
     let (defined,argNames') = splitAt (length params) argNames
         defined' = zip defined params ++ ps
