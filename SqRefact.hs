@@ -478,6 +478,7 @@ evalApp (Curried "average" []) [Seq xs] = seq . map Int . Sq.average $ ns
 
 evalApp (Curried "length" []) [Chain c] = int . length . getChain $ c
 evalApp (Curried "distinct" []) [Chain c] = chain $ fChain nub c
+evalApp (Curried "distinct" []) [Seq xs] = seq $ nub xs
 evalApp (Curried "const" [a]) [_] = return a
 evalApp (Curried f args) [arg] = return $ Curried f (args ++ [arg])
 evalApp (FunDef argNames ps body) params =

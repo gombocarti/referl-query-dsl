@@ -165,6 +165,7 @@ data TypConstraint
     | Typeable Typ
     | MultiLine Typ
     | MultiExpression Typ
+    | MultiSet Typ
     | Ord Typ
       deriving (Show,Eq)
 

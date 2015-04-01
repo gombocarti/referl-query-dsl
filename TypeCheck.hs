@@ -260,6 +260,7 @@ getTypeVar (Referencable a) = a
 getTypeVar (Typeable a) = a
 getTypeVar (MultiLine a) = a
 getTypeVar (MultiExpression a) = a
+getTypeVar (MultiSet a) = a
 getTypeVar (Ord a) = a
 
 argType :: Typ -> Int -> Typ
@@ -326,7 +327,7 @@ funtypes =
     , ("min", Ord a :=>: List a :->: List a)
     , ("average", List Int :->: List Int)
     , ("count", Chain a :->: Int)
-    , ("distinct", Chain a :->: Chain a)
+    , ("distinct", MultiSet a :=>: a :->: a)
     , ("const", a :->: b :->: a)
     ]
     where a = TV 'a'
@@ -336,6 +337,11 @@ relationType :: Binop -> Typ
 relationType Regexp = String :->: String :->: Bool
 relationType _      = a :->: a :->: Bool
     where a = TV 'a'
+
+multiset :: Typ -> QCheck ()
+multiset (List _) = return ()
+multiset (Chain _) = return ()
+multiset t = throwError $ "is not multiset: " ++ show t
 
 -- |Decides whether the particular type have name function.
 named :: Typ -> QCheck ()
@@ -378,6 +384,7 @@ checkConst constr env = case constr of
                          Typeable a        -> getTyp a >>= typeable
                          MultiLine a       -> getTyp a >>= multiline
                          MultiExpression a -> getTyp a >>= multiexpr
+                         MultiSet a        -> getTyp a >>= multiset
                          Ord a             -> getTyp a >>= ord
     where getTyp a = case lookup a env of
                        Just t  -> return t
