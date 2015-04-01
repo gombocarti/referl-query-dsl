@@ -219,10 +219,9 @@ instance Show UQuery where
     showsPrec _ (URef name) = showString name
     showsPrec d (UAppExpr f args) = showParen (d > appPrec) $
                                     showString f .
-                                    showString " " .
                                     foldr (.) (showString "") (map showArg args) 
         where appPrec = 10
-              showArg arg = showsPrec (appPrec + 1) arg . showString " "
+              showArg arg = showString " " . showsPrec (appPrec + 1) arg
     showsPrec d (UBind a (UF "()" b)) = showsPrec d a .
                                         showString ", " .
                                         showsPrec d b
