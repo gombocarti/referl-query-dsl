@@ -154,7 +154,7 @@ data Typ
     | Unit
     | FunRecursivity
     | FilePath
-    | TV Char                -- ^ Type variable.
+    | TypVar String          -- ^ Type variable.
     | Typ :->: Typ           -- ^ Function type.
     | TypConstraint :=>: Typ -- ^ Type constraint.
       deriving Eq
@@ -184,7 +184,7 @@ instance Show Binop where
     show Regexp = "=~"
 
 instance Show Typ where
-    show (TV c)   = [c]
+    show (TypVar v)   = v
     show (List t) = "[" ++ show t ++ "]"
     show (Chain t) = "Chain " ++ show t
     show (Tuple components) = "(" ++ intercalate "," (map show components) ++ ")"

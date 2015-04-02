@@ -56,7 +56,7 @@ check (UBind m (UF x body)) = do
   addVar x tm
   body' ::: List tbody <- check body 
   return $ UBind m' (UF x body') ::: List tbody
-    where a = TV 'a'
+    where a = TypVar "a1"
 check (UReturn x) = do
   x' ::: t <- check x
   return $ UReturn x' ::: List t
@@ -71,7 +71,7 @@ check (UGroupBy f q) = do
   ft <- getType f
   apptype <- typeCheck f ft [tq]
   return $ UGroupBy f q' ::: Grouped apptype tq'
-    where a = TV 'a'
+    where a = TypVar "a1"
 check (UWith defs q) = do
   defs' <- mapM check defs
   let ds = [d | d ::: _ <- defs']
@@ -148,7 +148,7 @@ checkIsDefined f = do
 checkFunDef :: Id -> [Id] -> UQuery -> SourcePos -> QCheck TUQuery
 checkFunDef f args body pos = do 
   namespace <- get
-  zipWithM_ addArg args ['a'..]
+  zipWithM_ addArg args [1..]
   setFunDef f
   body' ::: bodyType <- check body `catchError` addLocation
   removeFunDef
@@ -157,7 +157,7 @@ checkFunDef f args body pos = do
   put namespace
   return $ UFunDef f args body' pos ::: ftype
       where 
-        addArg arg c     = addVar arg (TV c)
+        addArg arg i     = addVar arg (TypVar ("t" ++ show i))
         addLocation err  = throwError (err ++ "\nin function definition " ++ f ++ "\nin " ++ show pos)
 
 setFunDef :: Id -> QCheck ()
@@ -220,7 +220,7 @@ typeCheck f t args = fst <$> tcheck t args [] 1
             unify b d env' ind)
           (\_ -> throwError $ errorMsg t1 t2 ind)
       unify (List a) (List b) env ind = unify a b env ind
-      unify a b@(TV _) env ind 
+      unify a b@(TypVar _) env ind 
           | typeVar a = do let tb = case lookup a env of
                                       Just ta  -> ta
                                       Nothing  -> argType t ind
@@ -328,15 +328,15 @@ funtypes =
     , ("average", List Int :->: List Int)
     , ("count", Chain a :->: Int)
     , ("distinct", MultiSet a :=>: a :->: a)
-    , ("const", a :->: b :->: a)
+--    , ("const", a :->: b :->: a)
     ]
-    where a = TV 'a'
-          b = TV 'b'
+    where a = TypVar "a"
+          b = TypVar "b"
 
 relationType :: Binop -> Typ
 relationType Regexp = String :->: String :->: Bool
 relationType _      = a :->: a :->: Bool
-    where a = TV 'a'
+    where a = TypVar "a"
 
 multiset :: Typ -> QCheck ()
 multiset (List _) = return ()
@@ -345,33 +345,33 @@ multiset t = throwError $ "is not multiset: " ++ show t
 
 -- |Decides whether the particular type have name function.
 named :: Typ -> QCheck ()
-named (TV _)  = return ()
+named (TypVar _)  = return ()
 named t | t `elem` [File,Mod,Fun,Record,RecordField] = return ()
         | otherwise = throwError $ "doesn't have name: " ++ show t
 
 -- |Decides whether the particular type is referencable.
 referencable :: Typ -> QCheck ()
-referencable (TV _) = return ()
+referencable (TypVar _) = return ()
 referencable t | t `elem` [Fun,Record,RecordField] = return ()
                | otherwise = throwError $ "not referencable: " ++ show t
                              
 typeable :: Typ -> QCheck ()
-typeable (TV _) = return ()
+typeable (TypVar _) = return ()
 typeable t | t `elem` [FunParam,RecordField] = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
 
 multiline :: Typ -> QCheck ()
-multiline (TV _) = return ()
+multiline (TypVar _) = return ()
 multiline t | t `elem` [File,Mod,Fun] = return ()
             | otherwise = throwError $ "can't count line of codes: " ++ show t
 
 multiexpr :: Typ -> QCheck ()
-multiexpr (TV _) = return ()
+multiexpr (TypVar _) = return ()
 multiexpr t | t `elem` [Fun,Expr] = return ()
             | otherwise = throwError $ "doesn't have expressions: " ++ show t
 
 ord :: Typ -> QCheck ()
-ord (TV _) = return ()
+ord (TypVar _) = return ()
 ord t | t `elem` [Int,String,Bool] = return ()
       | otherwise = throwError $ "can't be ordered: " ++ show t
 
@@ -421,7 +421,7 @@ isFunType (_ :->: _) = True
 isFunType _ = False
 
 typeVar :: Typ -> Bool
-typeVar (TV _) = True
+typeVar (TypVar _) = True
 typeVar _      = False
 
 expect :: Typ -> Typ -> QCheck ()
