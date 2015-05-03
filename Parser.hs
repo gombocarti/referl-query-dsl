@@ -26,7 +26,7 @@ sqDef = T.LanguageDef
         , T.opStart = oneOf "<=>∪⊆∈∘"
         , T.reservedOpNames = []
         , T.opLetter = T.opStart sqDef
-        , T.reservedNames = ["group","with"]
+        , T.reservedNames = ["groupBy","with"]
         , T.caseSensitive = True
         , T.commentLine = "--"
         , T.commentStart = "{-"
@@ -70,14 +70,14 @@ set = braces q <?> "query"
             r <- ret
             _ <- vline
             x <- getState
-            putState . Just $ r
+            putState (Just r)
             b <- bind
             putState x
             return b
 
 groupby :: QParser UQuery
 groupby = do
-  try $ reserved "group"
+  try $ reserved "groupBy"
   f <- identifier
   q <- set
   return $ UGroupBy f q

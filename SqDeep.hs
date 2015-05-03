@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, OverlappingInstances #-}
 module SqDeep where
 
-import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..), UFun(..))
+import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..))
 import TypeCheck (check)
 import Text.Parsec (runParser)
 import Control.Monad.Error (throwError)
@@ -142,12 +142,12 @@ eval (UGroupBy f q) env = Grouped res
           g x y = (evalApp f [x] == evalApp f [y])
           h group = (evalApp f [head group],group)
           res = map h groups          
-eval (UAppExpr UClosureN [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
+eval (UAppExpr "closureN" [n,fs,v]) env = Seq $ Sq.closureN n' f (eval v env)
     where f      = makeFun fs
           Int n' = eval n env
-eval (UAppExpr ULfp [fs,v]) env = Seq $ Sq.lfp f (eval v env)
+eval (UAppExpr "lfp" [fs,v]) env = Seq $ Sq.lfp f (eval v env)
     where f = makeFun fs
-eval (UAppExpr UIteration [n,fs,v]) env = Seq $ Sq.iteration n' f (eval v env)
+eval (UAppExpr "iteration" [n,fs,v]) env = Seq $ Sq.iteration n' f (eval v env)
     where f      = makeFun fs
           Int n' = eval n env
 eval (UAppExpr UChainInf [fs,v]) env = wrap $ Sq.chainInf f (eval v env)

@@ -69,7 +69,7 @@ check (UGroupBy f q) = do
   expect (List a) tq `catchError` addExpr q
   let List tq' = tq
   ft <- getType f
-  apptype <- typeCheck f ft [tq]
+  apptype <- typeCheck f ft [tq']
   return $ UGroupBy f q' ::: Grouped apptype tq'
     where a = TypVar "a1"
 check (UWith defs q) = do
@@ -177,6 +177,8 @@ makeFunType args bodyt = let (cs, ftype) = foldr step ([],bodyt) args
 
 type TEnv = [(Typ,Typ)]
 
+
+-- típuskikövetkeztetés
 typeCheck :: Id -> Typ -> [Typ] -> QCheck Typ
 typeCheck f t args = fst <$> tcheck t args [] 1
     where
