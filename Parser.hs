@@ -71,9 +71,12 @@ set = braces q <?> "query"
             _ <- vline
             x <- getState
             putState (Just r)
-            b <- bind
+            b <- compr_elem
             putState x
             return b
+
+compr_elem :: QParser UQuery
+compr_elem = bind <|> filter
 
 groupby :: QParser UQuery
 groupby = do
@@ -168,7 +171,7 @@ bindable :: QParser UQuery
 bindable = initial <|> union <|> set <|> app <|> ref
 
 following :: QParser UQuery
-following = do q <-  optionMaybe (comma *> (bind <|> filter))
+following = do q <-  optionMaybe (comma *> compr_elem)
                case q of 
                  Just x  -> return x
                  Nothing -> fromJust <$> getState                       
@@ -183,7 +186,7 @@ vline :: QParser String
 vline = symbol "|"
 
 ret :: QParser UQuery
-ret = UReturn <$> (tuple <|> app <|> ref <|> set)
+ret = UReturn <$> (tuple <|> app <|> ref <|> set <|> numLit <|> stringLit)
 
 tuple :: QParser UQuery
 tuple = parens elems <?> "tuple"
