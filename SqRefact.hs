@@ -126,7 +126,7 @@ type Query a = StateT Env (ReaderT Database (ReaderT (Maybe Arg) (ErrorT String 
 eval :: UQuery -> Query Value
 eval (UQuery q) = eval q
 eval (UBind m (UF x body)) = do 
-  Seq as <-  eval m
+  Seq as <- eval m
   env <- get
   xs <- forM as (\a -> put ((x,a):env) >> eval body)
   put env
@@ -402,6 +402,8 @@ evalApp (Curried "name" []) [arg] =
       TypeExpr t -> propertyDb String lib_typeExp "name" t
       Type t     -> propertyDb String lib_type "name" t
 -- TODO mit ad vissza a returntypes refactorerlben? (type vagy typeexpr?)
+evalApp (Curried "includes" []) [File f] =
+    queryDb1 File (filepath "includes") f
 evalApp (Curried "arity" []) [Fun f] = propertyDb Int lib_function "arity" f
 evalApp (Curried "loc" []) [arg]   = propertyDb Int metrics "metric" args
     where 
@@ -410,7 +412,14 @@ evalApp (Curried "loc" []) [arg]   = propertyDb Int metrics "metric" args
                        Fun f  -> ("function",f)
                        File f -> ("file",f)                      
 evalApp (Curried "not" []) [Bool pred] = bool . not $ pred
+evalApp (Curried "||" [Bool x]) [Bool y] = bool (x || y) 
 evalApp (Curried "null" []) [Seq xs] = bool . null $ xs
+evalApp (Curried "==" [x]) [y] = bool (x == y)
+evalApp (Curried "/=" [x]) [y] = bool (x /= y)
+evalApp (Curried ">" [x]) [y] = bool (x > y)
+evalApp (Curried ">=" [x]) [y] = bool (x >= y)
+evalApp (Curried "<" [x]) [y] = bool (x < y)
+evalApp (Curried "<=" [x]) [y] = bool (x <= y)
 evalApp (Curried "∈" [a]) [Seq bs] = bool $ a `elem` bs
 evalApp (Curried "⊂" [Seq as]) [Seq bs] = bool $ as `Sq.all_in` bs
 evalApp (Curried "any_in" [Seq as]) [Seq bs] = bool $ as `Sq.any_in` bs

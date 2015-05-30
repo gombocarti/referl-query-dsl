@@ -115,12 +115,6 @@ check (UFunComp args) = do
       step :: Typ -> Typ -> QCheck Typ
       step compType atype = fst <$> compose atype compType []
 
-check (URelation op q1 q2) = do
-  q1' ::: t1 <- check q1
-  q2' ::: t2 <- check q2
-  let relType = relationType op
-  _ <- typeCheck (show op) relType [t1,t2]
-  return $ (URelation op q1' q2') ::: Bool
 check (UGuard p) = do
   p' ::: t <- check p
   expect Bool t `catchError` addExpr p
@@ -289,7 +283,7 @@ type ErrMsg = String
 
 -- |Associates function name with type.
 funtypes :: [(Id, Typ)]
-funtypes = 
+funtypes = relType ++
     [ ("functions", Mod :->: List Fun)
     , ("name", Named a :=>: a :->: String)
     , ("arity", Fun :->: Int)
@@ -313,6 +307,8 @@ funtypes =
     , ("exprType", Expr :->: ExprType)
     , ("expressions", MultiExpression a :=>: a :->: List Expr)
     , ("not", Bool :->: Bool)
+    , ("~=", String :->: String :->: Bool)
+    , ("||", Bool :->: Bool :->: Bool)
     , ("∪", List a :->: List a :->: List a)
     , ("∈", a :->: List a :->: Bool)
     , ("⊆", List a :->: List a :->: Bool)
@@ -332,13 +328,9 @@ funtypes =
     , ("distinct", MultiSet a :=>: a :->: a)
 --    , ("const", a :->: b :->: a)
     ]
-    where a = TypVar "a"
-          b = TypVar "b"
-
-relationType :: Binop -> Typ
-relationType Regexp = String :->: String :->: Bool
-relationType _      = a :->: a :->: Bool
-    where a = TypVar "a"
+    where a       = TypVar "a"
+          rels    = ["==","/=","<","<=",">",">="]
+          relType = [(rel, a :->: a :->: Bool) | rel <- rels]
 
 multiset :: Typ -> QCheck ()
 multiset (List _) = return ()
