@@ -14,6 +14,7 @@ import Data.List (isPrefixOf)
   var    { TokenVar $$ }
   int    { TokenInt $$ }
   string { TokenString $$ }
+  bool   { TokenBool $$ }
   '{'    { TokenOB }
   '}'    { TokenCB }
   '|'    { TokenPipe }
@@ -21,6 +22,9 @@ import Data.List (isPrefixOf)
   ','    { TokenComma }
   '('    { TokenOP }
   ')'    { TokenCP }
+  '∈'    { TokenElementOf }
+  '∪'    { TokenUnion }
+  '∩'    { TokenIntersect }
   with   { TokenWith}
 
 %%
@@ -41,16 +45,16 @@ CompExp :: { [UQuery] }
 Exp   :: { UQuery }
       : Tuple                   { $1 }
 --    | App                     { $1 }
-      | int                     { UNumLit' $1 }
+      | int                     { UNumLit $1 }
       | string                  { UStringLit $1 }
       | var                     { URef $1 }
       | '(' Exp ')'             { $2 }
 
 App   :: { UQuery }
---    : Exp Exp                 { UAppExpr' $1 $2 }
-      : App Exp                 { UAppExpr' $1 $2 }
+--    : Exp Exp                 { UAppExpr $1 $2 }
+      : App Exp                 { UAppExpr $1 $2 }
       | Exp                     { $1 }
---    | App '(' App ')'         { UAppExpr' $1 $3 }
+--    | App '(' App ')'         { UAppExpr $1 $3 }
 --    | var                     { URef $1 }
 {-
 With :: { UQuery }
@@ -66,8 +70,9 @@ TExps : Exp ',' Exp             { [$3,$1] }
 {
 
 data Token = TokenVar String
-           | TokenInt Integer
+           | TokenInt Int
            | TokenString String
+           | TokenBool Bool
            | TokenOB
            | TokenCB
            | TokenOP
@@ -76,6 +81,9 @@ data Token = TokenVar String
            | TokenBind
            | TokenComma
            | TokenWith
+           | TokenElementOf
+           | TokenUnion
+           | TokenIntersect
            deriving Show
 
 lexer :: String -> [Token]
@@ -107,11 +115,11 @@ lexString s = TokenString lit : lexer (tail s')
 parseError :: [Token] -> a
 parseError _ = error "Parse error"
 
-
 transform :: UQuery -> UQuery
 transform (UCompr ret xs) = app
-    where app  = foldr step ret xs
-          step (UBind' var m) acc = UAppExpr' (UAppExpr' (URef ">>=") m) (ULambda var acc)
-          step p              acc = UAppExpr' (UAppExpr' (URef ">>") (UAppExpr' (URef "guard") p)) acc
+    where app  = foldr step ret' xs
+          step (UBind' var m) acc = UBind m (UF var acc)
+          step p              acc = UGuard p acc
+          ret'                    = UReturn ret
 transform query           = query
 }

@@ -3,7 +3,7 @@ module Types where
 import Data.List (intercalate)
 import Text.Parsec.Pos (SourcePos)
 
-import qualified Sq (DbModule, DbFunction, Named, ExprType, DbFunctionType)
+import qualified Sq (ExprType, DbFunctionType)
 
 -- |Identifiers.
 type Id = String
@@ -12,15 +12,10 @@ data TQuery a where
     TAppExpr :: TQuery (a -> b) -> TQuery a -> TQuery b
     TBind  :: TQuery [a] -> TF (a -> [b]) -> TQuery [b]
     TReturn :: TQuery a -> TQuery [a]
-    TUnionExpr :: TQuery [a] -> TQuery [a] -> TQuery [a]
     TVarExpr :: Id -> TQuery a
     TGuard :: TQuery Bool -> TQuery [()]
-    TRelation :: Ord a => TQuery a -> Binop -> TQuery a -> TQuery Bool
     TStringLit ::  String -> TQuery String
-    TModules :: TQuery [Sq.DbModule]
-    TFunctions :: TQuery (Sq.DbModule -> [Sq.DbFunction])
-    TName :: Sq.Named a => TQuery (a -> String)
-    TArity :: TQuery (Sq.DbFunction -> Int)
+    TNumLit :: Int -> TQuery Int
     TUnit :: TQuery ()
 
 data TF a where
@@ -29,18 +24,19 @@ data TF a where
 -- |Untyped syntax tree type for queries.
 data UQuery
     = UQuery UQuery  -- ^ Root of syntax tree
-    | UAppExpr Id [UQuery]
+    | UCompr UQuery [UQuery]
+    | UAppExpr UQuery UQuery
     | UFunExpr Id
     | UFunComp [UQuery]
     | UBind UQuery UF
+    | UBind' Id UQuery
+    | UReturn UQuery
+    | UGuard UQuery UQuery
+    | ULambda Id UQuery
     | UFunDef Id [Id] UQuery SourcePos
     | UWith [UQuery] UQuery
-    | UReturn UQuery
     | UTuple [UQuery]
-    | UGroupBy Id UQuery
     | UVarExpr Id
-    | UGuard UQuery
-    | URelation Binop UQuery UQuery
 --    | UFunRef Id
     | URef Id
     | UDataConst Id
@@ -49,77 +45,14 @@ data UQuery
     | UBoolLit Bool
     | UExprTypeLit Sq.ExprType
     | UFunRecurLit Sq.DbFunctionType
-    | UModules
-    | UFiles
-    | UAtFile
-    | UAtModule 
-    | UAtFunction
-    | UAtExpr
-     deriving (Eq)
---      deriving (Eq,Show)
+--     deriving (Eq)
+      deriving (Eq,Show)
 data TUQuery = UQuery ::: Typ
-
-{-
--- |Applicable functions of the query language.
-data UFun
-    = UFunctions -- ^ Functions of a module.
-    | UPath      -- ^ Path of a loaded file.
-    | UDir       -- ^ Directory containing a file.
-    | UFileName  -- ^ Name of a loaded file.
-    | UIsModule  -- ^ True if the file contains a module.
-    | UFile      -- ^ File of a module.
-    | UModule    -- ^ Module of a file.
-    | UDefModule -- ^ Module of function.
-    | URecords   -- ^ Records defined in a file.
-    | UExports   -- ^ Exported functions of a module.
-    | UImports   -- ^ Imported functions of a module.
-    | ULoc       -- ^ Lines of code.
-    | UFunLoc
-    | UFileLoc
-    | UName      
-    | UFunName
-    | UModName
-    | UArity
-    | UCalls
-    | UNull      -- ^ Prelude.null.
-    | UNot       -- ^ Prelude.not
-    | UElem      -- ^ Prelude.elem 
-    | UUnion     -- ^ Data.List.union
-    | USubset
-    | UAnyIn
-    | UFName String -- ^ Function identified by its name.
-    | UExported
-    | URecursivity
-    | UReturns
-    | UReferences
-    | UParameters
-    | UOrigin
-    | UReach
-    | UFields      -- ^ Fields of a record.
-    | UTypeOf
-    | UFunParamTypeOf
-    | URecFieldTypeOf
-    | UExprType
-    | UExpressions
-    | UFunExpressions
-    | USubExpressions
-    | UChainN
-    | UChainInf
-    | UClosureN
-    | ULfp
-    | UIteration
-    | UMax
-    | UMin
-    | UAverage
-    | ULength
-    | UDistinct
-      deriving (Show, Eq)
--}
 
 -- |Untyped function.
 data UF = UF Id UQuery
           deriving (Show,Eq)
-
+{-
 data Binop
     = Eq
     | NEq
@@ -129,10 +62,10 @@ data Binop
     | Gte
     | Regexp
       deriving Eq
-
+-}
 -- |Types of the query language.
 data Typ
-    = List Typ
+    = Set Typ
     | Tuple [Typ]
     | Chain Typ
     | Grouped Typ Typ
@@ -173,7 +106,7 @@ infixr 2 :->:
 infixr 1 :=>:
 
 -- Show instances.
-
+{-
 instance Show Binop where
     show Eq     = "=="
     show NEq    = "/="
@@ -182,10 +115,11 @@ instance Show Binop where
     show Gt     = ">"
     show Gte    = ">="
     show Regexp = "=~"
+-}
 
 instance Show Typ where
     show (TypVar v)   = v
-    show (List t) = "[" ++ show t ++ "]"
+    show (Set t) = "{" ++ show t ++ "}"
     show (Chain t) = "Chain " ++ show t
     show (Tuple components) = "(" ++ intercalate "," (map show components) ++ ")"
     show (constr :=>: t) = show constr ++ " => " ++ show t
@@ -214,8 +148,9 @@ instance Show Typ where
 instance Show TUQuery where
     show (q ::: t) = show q ++ " :: " ++ show t
 
-
+{-
 instance Show UQuery where
+
     showsPrec _ (URef name) = showString name
     showsPrec d (UAppExpr f args) = showParen (d > appPrec) $
                                     showString f .
@@ -271,3 +206,4 @@ showReturn (UReturn ret)      = showString "{ " .
                                 showString " | "
 showReturn _ = showString ""
 
+-}

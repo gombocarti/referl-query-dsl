@@ -1,7 +1,7 @@
 module SqRefact where
 
 import Prelude hiding (seq,mod)
-import Types (Id, UQuery(..), TUQuery(..), UF(..), Binop(..))
+import Types (Id, UQuery(..), TUQuery(..), UF(..))
 import Foreign.Erlang
 import Data.List (union,nub,groupBy,intercalate,partition)
 import Text.Regex.Posix ((=~))
@@ -38,6 +38,7 @@ data Value
     | Grouped [(Value,Value)]
     | Tuple [UQuery] [Value]
     | FunDef [Id] [(Id,Value)] UQuery
+    | Lambda Id UQuery
     | Curried Id [Value]
       deriving (Show,Eq)
 
@@ -131,7 +132,10 @@ eval (UBind m (UF x body)) = do
   xs <- forM as (\a -> put ((x,a):env) >> eval body)
   put env
   return $ concatValue xs
-eval (UGroupBy f q) = do
+eval (UReturn x) = do
+  y <- eval x
+  seq [y]
+{-eval (UGroupBy f q) = do
   Seq xs <- eval q
   ys <- forM xs (evalApp' f)
   let zs = zip ys xs
@@ -140,7 +144,9 @@ eval (UGroupBy f q) = do
       group xs = map merge (groupBy criteria xs)
       criteria = (==) `on` fst
       merge xs = (fst . head $ xs, Seq (map snd xs))
+-}
 --eval (UVarExpr v) env = readVar v env
+{-
 eval (UAppExpr "closureN" [n,fs,x]) = do
   Int n' <- eval n
   x' <- eval x
@@ -164,56 +170,46 @@ eval (UAppExpr "chainN" [n,fs,x]) = do
   x' <- eval x
   Seq <$> chainNM n' f x'
     where f = makeFun fs
+-}
+eval (URef "modules") = queryDb Mod (modpath "all")
+eval (URef "files") = queryDb File (filepath "all")
+eval (URef "atFunction") = do
+  arg <- getArg
+  f <- callDb' lib_args "function" [arg] (throwError "atFunction: no function at given position")
+  return . Fun $ f
+eval (URef "atFile") = do
+  arg <- getArg
+  f <- callDb' lib_args "file" [arg] (throwError "atFile: no file at given position")
+  return . File $ f
+eval (URef "atModule") = do
+  arg <- getArg
+  m <- callDb' lib_args "module" [arg] (throwError "atModule: no module at given position")
+  return . Mod $ m
+eval (URef "atExpr") = do
+  arg <- getArg
+  e <- callDb' lib_args "expression" [arg] (throwError "atExpression: no expression at given position")
+  return . Expr $ e
+eval (UTuple components) = do
+  xs <- mapM eval components
+  return $ Tuple components xs
 eval (URef name) = readVar name
+eval (ULambda x body) = return (Lambda x body)
 eval (UWith defs q) = addFuns >> eval q
     where
       addFuns = forM defs addFun
       addFun (UFunDef f args body _) = modify ((f,FunDef args [] body):)
-eval (UAppExpr f args) = do
-  args' <- mapM eval args
+eval (UAppExpr (URef f) arg) = do
+  arg' <- eval arg
   v <- maybeReadVar f
   case v of
-    Just fundef -> evalApp fundef args'
-    Nothing     -> foldM g (section f) args'
+    Just fundef -> evalApp fundef [arg']
+    Nothing     -> g (section f) arg'
         where g f' a = evalApp f' [a]
-eval UModules = queryDb Mod (modpath "all")
-eval UFiles = queryDb File (filepath "all")
-eval UAtFunction = do
-  arg <- getArg
-  f <- callDb' lib_args "function" [arg] (throwError "atFunction: no function at given position")
-  return . Fun $ f
-eval UAtFile = do
-  arg <- getArg
-  f <- callDb' lib_args "file" [arg] (throwError "atFile: no file at given position")
-  return . File $ f
-eval UAtModule = do
-  arg <- getArg
-  m <- callDb' lib_args "module" [arg] (throwError "atModule: no module at given position")
-  return . Mod $ m
-eval UAtExpr = do
-  arg <- getArg
-  e <- callDb' lib_args "expression" [arg] (throwError "atExpression: no expression at given position")
-  return . Expr $ e
-eval (UReturn e) = do 
-  x <- eval e
-  seq [x]
-eval (UTuple components) = do
-  xs <- mapM eval components
-  return $ Tuple components xs
 eval (UStringLit s) = string s
-eval (UNumLit i) = int i
+eval (UNumLit i) = int $ i
 eval (UBoolLit b) = bool b
 eval (UExprTypeLit t) = return $ ExprType t
 eval (UFunRecurLit fr) = return $ FunRecursivity fr
-eval (URelation rel p1 p2) = do 
-  p1' <- eval p1
-  p2' <- eval p2
-  bool $ evalRel p1' rel p2'       
-eval (UGuard pred) = do
-  Bool p <- eval pred
-  if p 
-  then seq [Unit]
-  else seq []
 eval x = error (show x)
 
 -- noob
@@ -270,14 +266,14 @@ wrap _f ErlNull     = return . Seq $ []
 wrap f (ErlList xs) = return . Seq . map f $ xs
 wrap f x            = return . f $ x
 
-evalRel :: Value -> Binop -> Value -> Bool
-evalRel a Eq  b = a == b
-evalRel a NEq b = a /= b
-evalRel a Gt  b = a >  b
-evalRel a Gte b = a >= b
-evalRel a Lt  b = a <  b
-evalRel a Lte b = a <= b
-evalRel a Regexp b = s =~ regex
+evalRel :: Value -> Id -> Value -> Bool
+evalRel a "=="  b = a == b
+evalRel a "/=" b = a /= b
+evalRel a ">"  b = a >  b
+evalRel a ">=" b = a >= b
+evalRel a "<"  b = a <  b
+evalRel a "<=" b = a <= b
+evalRel a "=~" b = s =~ regex
     where String s     = a
           String regex = b
                    
@@ -393,6 +389,8 @@ evalApp' :: Id -> Value -> Query Value
 evalApp' f arg = evalApp (section f) [arg]
 
 evalApp :: Value -> [Value] -> Query Value
+evalApp (Curried f [p1]) [p2] | isRelation = bool (evalRel p1 f p2)
+                              where isRelation = f `elem` ["==","<",">","/="]
 evalApp (Curried "name" []) [arg] = 
     case arg of
       Fun f      -> propertyDb String lib_function "name" f
@@ -529,6 +527,13 @@ getChain (Sq.Incomplete xs) = xs
 getChain (Sq.Complete xs)   = xs
 getChain (Sq.Recursive xs)  = xs
 
+showValue' :: Value -> Query String
+showValue' (Seq fs@(Fun _:_)) = do
+  ErlList s <- callDb lib_haskell "name" [fs',tag]
+  return (concatMap (\ (ErlAtom a) -> a) s)
+    where fs' = ErlList $ map (\(Fun f) -> f) fs
+          tag = ErlAtom "function"
+
 showValue :: Value -> Query String
 showValue f@(File _)   = do
   String name <- evalApp' "filename" f
@@ -611,3 +616,9 @@ fillCenter n s = pad ++ s ++ pad
     where 
       padWidth = (n - length s) `div` 2
       pad      = replicate padWidth ' '
+
+modsfuns :: Query Value
+modsfuns = do
+  Seq ms <- eval (URef "modules")
+  fs <- forM ms (evalApp' "functions")
+  return $ concatValue fs

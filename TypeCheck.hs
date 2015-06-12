@@ -8,7 +8,7 @@ import Control.Monad.Writer
 import Control.Monad.Error (throwError,catchError)
 import Control.Applicative ((<$>))
 import Text.Read (readMaybe)
-import Text.Parsec.Pos (SourcePos)
+import Text.Parsec.Pos (SourcePos,newPos)
 import Types
 
 getType :: Id -> QCheck Typ
@@ -32,15 +32,13 @@ addVar v t = modify ((v,t):)
 
 type CallStack = [Id]
 
-type QCheck a = StateT Namespace (StateT CallStack (WriterT [String] (Either String))) a
+type QCheck a =
+    StateT Namespace
+     (StateT CallStack
+       (Either String)) a
 
-runQCheck :: QCheck a -> Namespace -> Either String ((a,Namespace),[String])
-runQCheck q ns = runWriterT (evalStateT (runStateT q ns) [])
-
-evalQCheck :: QCheck a -> Namespace -> Either String (a, [String])
-evalQCheck q ns = case runQCheck q ns of
-                    Right ((x,_),warns) -> Right (x, warns)
-                    Left err            -> Left err
+runQCheck :: QCheck a -> Namespace -> Either String ((a,Namespace))
+runQCheck q ns = evalStateT (runStateT q ns) []
     
 type Namespace = [(Id, Typ)]
 
@@ -51,27 +49,19 @@ check (UQuery q) = do
   return $ UQuery q' ::: t
 check (UBind m (UF x body)) = do
   m' ::: tms <- check m
-  expect (List a) tms `catchError` addExpr m
-  let List tm = tms
+  expect (Set a) tms `catchError` addExpr m
+  let Set tm = tms
   addVar x tm
-  body' ::: List tbody <- check body 
-  return $ UBind m' (UF x body') ::: List tbody
+  body' ::: Set tbody <- check body 
+  return $ UBind m' (UF x body') ::: Set tbody
     where a = TypVar "a1"
 check (UReturn x) = do
   x' ::: t <- check x
-  return $ UReturn x' ::: List t
+  return (UReturn x' ::: Set t)
 check (UTuple xs) = do
   xs' <- mapM check xs
   let (ys,tys) = unzip [(y,ty) | y ::: ty <- xs']
   return $ UTuple ys ::: Tuple tys
-check (UGroupBy f q) = do
-  q' ::: tq <- check q
-  expect (List a) tq `catchError` addExpr q
-  let List tq' = tq
-  ft <- getType f
-  apptype <- typeCheck f ft [tq']
-  return $ UGroupBy f q' ::: Grouped apptype tq'
-    where a = TypVar "a1"
 check (UWith defs q) = do
   defs' <- mapM check defs
   let ds = [d | d ::: _ <- defs']
@@ -82,9 +72,9 @@ check (UFunDef f args body pos) = do
   fundef ::: ftype <- checkFunDef f args body pos
   addVar f ftype
   return (fundef ::: ftype)
-check q@(URef name) = do
+check ref@(URef name) = do
   t <- getType name
-  return (q ::: t)
+  return (ref ::: t)
 check (UDataConst cons) =
     case readMaybe cons of 
       Just x -> return $ UExprTypeLit x ::: ExprType
@@ -92,19 +82,18 @@ check (UDataConst cons) =
         case readMaybe cons of
           Just x -> return $ UFunRecurLit x ::: FunRecursivity
           Nothing -> throwError $ "unknown literal: " ++ cons
-check UModules = return $ UModules ::: List Mod
-check UFiles = return $ UFiles ::: List File
-check UAtFile = return $ UAtFile ::: File
-check UAtModule = return $ UAtModule ::: Mod
-check UAtFunction = return $ UAtFunction ::: Fun
-check UAtExpr = return $ UAtExpr ::: Expr
-check (UAppExpr f args) = do
+check f@(ULambda x body) = do
+  _ ::: t <- checkFunDef "" [x] body (newPos "" 1 1)
+  return (f ::: t)
+check (UAppExpr f arg) = do
   defining <- getFunDef
-  when (f `elem` defining) (throwError "recursion is not supported")
-  targs' <- mapM check args
-  let (args', argtypes') = unzip [(arg, argt) | arg ::: argt <- targs']
-  ft <- checkApp f argtypes'
-  return $ (UAppExpr f args') ::: ft
+  when (recursive f defining) (throwError "recursion is not supported")
+  f' ::: fType <- check f
+  arg' ::: argt <- check arg
+  (appT,_) <- checkApp fType argt
+  return $ (UAppExpr f' arg') ::: appT
+    where recursive (URef g) defining = g `elem` defining
+          recursive _        _        = False
 check (UFunComp args) = do
   targs <- mapM check args
   let (args', types) = unzip [(arg, t) | arg ::: t <- targs]
@@ -114,11 +103,6 @@ check (UFunComp args) = do
     where
       step :: Typ -> Typ -> QCheck Typ
       step compType atype = fst <$> compose atype compType []
-
-check (UGuard p) = do
-  p' ::: t <- check p
-  expect Bool t `catchError` addExpr p
-  return $ UGuard p' ::: List Unit
 check q@(UNumLit _) = return $ q ::: Int
 check q@(UStringLit _) = return $ q ::: String
 check q@(UBoolLit _) = return $ q ::: Bool
@@ -127,11 +111,33 @@ addExpr :: UQuery -> String -> QCheck ()
 addExpr q err = throwError (err ++ "\nin expression " ++ show q)
 
 -- |Checks the argument types.
-checkApp :: Id -> [Typ] -> QCheck Typ
-checkApp f argTypes = do
-  fType <- getType f
-  resType <- typeCheck f fType argTypes
-  return resType
+checkApp :: Typ -> Typ -> QCheck (Typ,TEnv)
+checkApp (c :=>: a) argType = do
+  res@(a',s) <- checkApp a argType
+  checkConst c s
+  return res
+checkApp fType argType = do
+  expect (argType :->: t0) fType
+  let (a :->: b) = fType
+      s = match a argType
+  return (subs s b,s)
+    where t0 = TypVar "t0"
+
+match :: Typ -> Typ -> TEnv
+match (Set x) (Set y) = match x y
+match (Chain x) (Chain y) = match x y
+match x       y
+    | isTypeVar x = [(x,y)]
+    | otherwise   = []
+
+subs :: TEnv -> Typ -> Typ
+subs []      y = y
+subs [(v,x)] y = subs' y
+    where subs' (a :->: b) = subs' a :->: subs' b
+          subs' (Set a)    = Set (subs' a)
+          subs' (Chain a)  = Chain (subs' a)
+          subs' a | a == v = x
+                  | otherwise = a
 
 checkIsDefined :: Id -> QCheck ()
 checkIsDefined f = do
@@ -151,7 +157,7 @@ checkFunDef f args body pos = do
   put namespace
   return $ UFunDef f args body' pos ::: ftype
       where 
-        addArg arg i     = addVar arg (TypVar ("t" ++ show i))
+        addArg arg i     = addVar arg (TypVar ('t':show i))
         addLocation err  = throwError (err ++ "\nin function definition " ++ f ++ "\nin " ++ show pos)
 
 setFunDef :: Id -> QCheck ()
@@ -170,10 +176,9 @@ makeFunType args bodyt = let (cs, ftype) = foldr step ([],bodyt) args
           step arg (cs,acc)         = (cs, arg :->: acc)
 
 type TEnv = [(Typ,Typ)]
-
-
+{-
 -- típuskikövetkeztetés
-typeCheck :: Id -> Typ -> [Typ] -> QCheck Typ
+typeCheck :: UQuery -> Typ -> Typ -> QCheck Typ
 typeCheck f t args = fst <$> tcheck t args [] 1
     where
       tcheck :: Typ -> [Typ] -> TEnv-> Int -> QCheck (Typ,TEnv)
@@ -196,14 +201,14 @@ typeCheck f t args = fst <$> tcheck t args [] 1
         else return (constr :=>: a',env')
       tcheck _ (_:_) _env _ind = 
           tooManyParams f argsCount (length args)
-      tcheck (List a) [] env ind = do
+      tcheck (Set a) [] env ind = do
         (aType, _) <- tcheck a [] env ind
-        return (List aType, env)
+        return (Set aType, env)
       tcheck (Chain a) [] env ind = do
         (aType, _) <- tcheck a [] env ind
         return (Chain aType, env)      
       tcheck a [] env _ind
-          | typeVar a = case lookup a env of
+          | isTypeVar a = case lookup a env of
                           Just b -> return (b,env)
                           Nothing -> return (a,env)
           | otherwise = return (a,env)
@@ -215,9 +220,9 @@ typeCheck f t args = fst <$> tcheck t args [] 1
             env' <- unify a c env ind
             unify b d env' ind)
           (\_ -> throwError $ errorMsg t1 t2 ind)
-      unify (List a) (List b) env ind = unify a b env ind
+      unify (Set a) (Set b) env ind = unify a b env ind
       unify a b@(TypVar _) env ind 
-          | typeVar a = do let tb = case lookup a env of
+          | isTypeVar a = do let tb = case lookup a env of
                                       Just ta  -> ta
                                       Nothing  -> argType t ind
                            setType b tb
@@ -225,7 +230,7 @@ typeCheck f t args = fst <$> tcheck t args [] 1
           | otherwise = do setType b a
                            return ((b,a):env)
       unify a b env ind
-          | typeVar a  = case lookup a env of 
+          | isTypeVar a  = case lookup a env of 
                            Just at -> unify at b env ind
                            Nothing -> do
                              setType a b
@@ -245,12 +250,12 @@ typeCheck f t args = fst <$> tcheck t args [] 1
       subs :: Typ -> TEnv -> Typ
       subs (a :->: b) env = subs a env :->: subs b env
       subs (Chain a) env = Chain (subs a env)
-      subs (List a) env = List (subs a env)
-      subs a env | typeVar a = case lookup a env of
+      subs (Set a) env = Set (subs a env)
+      subs a env | isTypeVar a = case lookup a env of
                                  Just t -> t
                                  Nothing -> a
                  | otherwise = a
-
+-}
 getTypeVar (Named a) = a
 getTypeVar (Referencable a) = a
 getTypeVar (Typeable a) = a
@@ -284,75 +289,91 @@ type ErrMsg = String
 -- |Associates function name with type.
 funtypes :: [(Id, Typ)]
 funtypes = relType ++
-    [ ("functions", Mod :->: List Fun)
+    [ ("modules", Set Mod)
+    , ("files", Set File)
+    , ("atFile", File)
+    , ("atModule", Mod)
+    , ("atFunction", Fun)
+    , ("atExpr", Expr)
+    , ("functions", Mod :->: Set Fun)
     , ("name", Named a :=>: a :->: String)
     , ("arity", Fun :->: Int)
-    , ("loc", MultiLine a :=>: a :->: List Int)
-    , ("null", List a :->: Bool)
-    , ("calls", Fun :->: List Fun)
-    , ("callsP", (Fun :->: Bool) :->: Fun :->: List Fun)
+    , ("loc", MultiLine a :=>: a :->: Set Int)
+    , ("null", Set a :->: Bool)
+    , ("calls", Fun :->: Set Fun)
+    , ("callsP", (Fun :->: Bool) :->: Fun :->: Set Fun)
     , ("path",  File :->: FilePath)
     , ("directory", File :->: FilePath)
     , ("filename", File :->: FilePath)
-    , ("file",  Mod :->: List File)
-    , ("module", File :->: List Mod)
-    , ("defmodule", Fun :->: List Mod)
-    , ("records",  File :->: List Record)
+    , ("file",  Mod :->: Set File)
+    , ("module", File :->: Set Mod)
+    , ("defmodule", Fun :->: Set Mod)
+    , ("records",  File :->: Set Record)
     , ("exported", Fun :->: Bool)
     , ("recursivity",  Fun :->: FunRecursivity)
-    , ("references", Referencable a :=>: a :->: List Expr)
-    , ("returns", Fun :->: List Type)
-    , ("parameters",Fun :->: List FunParam)
+    , ("references", Referencable a :=>: a :->: Set Expr)
+    , ("returns", Fun :->: Set Type)
+    , ("parameters",Fun :->: Set FunParam)
     , ("type",  Typeable a :=>: a :->: Type)
     , ("exprType", Expr :->: ExprType)
-    , ("expressions", MultiExpression a :=>: a :->: List Expr)
+    , ("expressions", MultiExpression a :=>: a :->: Set Expr)
     , ("not", Bool :->: Bool)
     , ("~=", String :->: String :->: Bool)
     , ("||", Bool :->: Bool :->: Bool)
-    , ("∪", List a :->: List a :->: List a)
-    , ("∈", a :->: List a :->: Bool)
-    , ("⊆", List a :->: List a :->: Bool)
-    , ("any_in", List a :->: List a :->: Bool)
-    , ("origin", Expr :->: List Expr)
-    , ("reach", Expr :->: List Expr)
-    , ("fields", Record :->: List RecordField)
-    , ("closureN", Int :->: (a :->: List a) :->: a :->: List a)
-    , ("lfp", (a :->: List a) :->: a :->: List a)
-    , ("iteration", Int :->: (a :->: List a) :->: a :->: List a)
-    , ("chainN", Int :->: (a :->: List a) :->: a :->: List (Chain a))
-    , ("chainInf", (a :->: List a) :->: a :->: List (Chain a))
-    , ("max", Ord a :=>: List a :->: List a)
-    , ("min", Ord a :=>: List a :->: List a)
-    , ("average", List Int :->: List Int)
+    , ("∪", Set a :->: Set a :->: Set a)
+    , ("∈", a :->: Set a :->: Bool)
+    , ("⊆", Set a :->: Set a :->: Bool)
+    , ("any_in", Set a :->: Set a :->: Bool)
+    , ("origin", Expr :->: Set Expr)
+    , ("reach", Expr :->: Set Expr)
+    , ("fields", Record :->: Set RecordField)
+    , ("closureN", Int :->: (a :->: Set a) :->: a :->: Set a)
+    , ("lfp", (a :->: Set a) :->: a :->: Set a)
+    , ("iteration", Int :->: (a :->: Set a) :->: a :->: Set a)
+    , ("chainN", Int :->: (a :->: Set a) :->: a :->: Set (Chain a))
+    , ("chainInf", (a :->: Set a) :->: a :->: Set (Chain a))
+    , ("max", Ord a :=>: Set a :->: Set a)
+    , ("min", Ord a :=>: Set a :->: Set a)
+    , ("average", Set Int :->: Set Int)
     , ("count", Chain a :->: Int)
     , ("distinct", MultiSet a :=>: a :->: a)
+    , ("groupBy", Set a :->: (a :->: b) :->: Grouped a b)
 --    , ("const", a :->: b :->: a)
     ]
     where a       = TypVar "a"
+          b       = TypVar "b"
           rels    = ["==","/=","<","<=",">",">="]
           relType = [(rel, a :->: a :->: Bool) | rel <- rels]
 
 multiset :: Typ -> QCheck ()
-multiset (List _) = return ()
+multiset (Set _) = return ()
 multiset (Chain _) = return ()
 multiset t = throwError $ "is not multiset: " ++ show t
 
 -- |Decides whether the particular type have name function.
 named :: Typ -> QCheck ()
-named (TypVar _)  = return ()
-named t | t `elem` [File,Mod,Fun,Record,RecordField] = return ()
-        | otherwise = throwError $ "doesn't have name: " ++ show t
-
+named (TypVar _)             = return ()
+named t | t `elem` namedInst = return ()
+        | otherwise          = throwError $ "doesn't have name: " ++ show t
+    where
+      namedInst = [File,Mod,Fun,Record,RecordField]
+                      
 -- |Decides whether the particular type is referencable.
 referencable :: Typ -> QCheck ()
-referencable (TypVar _) = return ()
-referencable t | t `elem` [Fun,Record,RecordField] = return ()
+referencable (TypVar _)    = return ()
+referencable t | inst      = return ()
                | otherwise = throwError $ "not referencable: " ++ show t
-                             
+    where
+      inst          = t `elem` referAbleInst
+      referAbleInst = [Fun,Record,RecordField]
+                          
 typeable :: Typ -> QCheck ()
-typeable (TypVar _) = return ()
-typeable t | t `elem` [FunParam,RecordField] = return ()
+typeable (TypVar _)    = return ()
+typeable t | inst      = return ()
            | otherwise = throwError $ "not typeable: " ++ show t
+    where
+      inst         = t `elem` typeAbleInst
+      typeAbleInst = [FunParam,RecordField]
 
 multiline :: Typ -> QCheck ()
 multiline (TypVar _) = return ()
@@ -390,19 +411,18 @@ compose (const :=>: f) g@(a :->: b) env = do
   checkConst const env'
   return (t, env')
 compose (c :->: d) (a :->: b) env 
-    | typeVar c = do  expect (List c) b
-                      let (List t) = b
-                      return $ (a :->: d, (c,t):env)
+    | isTypeVar c = do expect (Set c) b
+                       let (Set t) = b
+                       return $ (a :->: d, (c,t):env)
                              
-    | otherwise = do  expect (List c) b
+    | otherwise = do  expect (Set c) b
                       return $ (a :->: d, env)
               
-{-
 resultType :: Typ -> Typ
 resultType (_ :=>: b) = resultType b
 resultType (_ :->: b) = resultType b
 resultType b = b
--}
+
 {-
 argType :: Typ -> Typ
 argType (c :=>: b) = c :=>: argType b
@@ -412,15 +432,17 @@ argType (a :->: b) | funType b = a :->: argType b
 isFunType :: Typ -> Bool
 isFunType (_ :=>: b) = isFunType b
 isFunType (_ :->: _) = True
-isFunType _ = False
+isFunType _          = False
 
-typeVar :: Typ -> Bool
-typeVar (TypVar _) = True
-typeVar _      = False
+isTypeVar :: Typ -> Bool
+isTypeVar (TypVar _) = True
+isTypeVar _          = False
 
 expect :: Typ -> Typ -> QCheck ()
-expect (List a) (List b) = expect a b
+expect (Set a) (Set b) = expect a b
+expect (a :->: b) (c :->: d) = do {expect a c; expect b d}
 expect expected actual 
-    | typeVar expected = return ()
+    | isTypeVar expected = return ()
+    | isTypeVar actual   = return ()
     | actual == expected = return ()
     | otherwise = throwError $ "type error: expected: " ++ show expected ++ ", actual: " ++ show actual
