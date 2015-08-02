@@ -85,6 +85,11 @@ check (UDataConst cons) =
 check f@(ULambda x body) = do
   _ ::: t <- checkFunDef "" [x] body (newPos "" 1 1)
   return (f ::: t)
+check (UGuard p rest) = do
+  _ ::: t <- check p
+  expect Bool t
+  rest' ::: restT <- check rest
+  return (UGuard p rest' ::: restT)
 check (UAppExpr f arg) = do
   defining <- getFunDef
   when (recursive f defining) (throwError "recursion is not supported")

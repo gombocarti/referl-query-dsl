@@ -52,6 +52,7 @@ valueToErlang :: Value -> ErlType
 valueToErlang (File f)      = f
 valueToErlang (Mod m)      = m
 valueToErlang (Fun f)      = f
+valueToErlang (Expr e)     = e
 valueToErlang (Rec r)      = r
 valueToErlang (Seq xs)     = toErlang xs
 valueToErlang (Grouped xs) = toErlang xs
@@ -184,6 +185,11 @@ eval (UBind m (UF x body)) = do
 eval (UReturn x) = do
   y <- eval x
   seq [y]
+eval (UGuard p rest) = do
+  Bool res <- eval p
+  if res
+  then eval rest
+  else seq []
 {-eval (UGroupBy f q) = do
   Seq xs <- eval q
   ys <- forM xs (evalApp' f)
