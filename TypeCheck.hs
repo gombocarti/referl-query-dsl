@@ -337,7 +337,7 @@ funtypes = relType ++
     , ("average", Set Int :->: Set Int)
     , ("count", Chain a :->: Int)
     , ("distinct", MultiSet a :=>: a :->: a)
-    , ("groupBy", Set a :->: (a :->: b) :->: Grouped a b)
+    , ("groupBy", (a :->: b) :->: Set a :->: Grouped a b)
 --    , ("const", a :->: b :->: a)
     ]
     where a       = TypVar "a"

@@ -1,7 +1,7 @@
 module SqRefact where
 
 import Prelude hiding (seq,mod)
-import Types (Id, UQuery(..), TUQuery(..), UF(..))
+import Types (Id, UQuery(..), UF(..))
 import Foreign.Erlang
 import Data.List (union,nub,groupBy,intercalate,partition)
 import Text.Regex.Posix ((=~))
@@ -14,10 +14,12 @@ import System.FilePath (takeFileName,takeDirectory)
 import Data.String.Utils (strip)
 import Sq (subset,Chain(..))
 
+import Data.Char (isPrint)
+
 import qualified Sq
 
 data Value
-    = File ErlType
+    = File { getFile :: ErlType }
     | Mod ErlType
     | Fun ErlType
     | Expr ErlType
@@ -41,40 +43,77 @@ data Value
     | Lambda Id UQuery
     | Curried Id [Value]
       deriving (Show,Eq)
+{-
+instance Erlang Value where
+    toErlang = valueToErlang
+    fromErlang = valueFromErlang
+
+valueToErlang :: Value -> ErlType
+valueToErlang = undefined
+-}
 
 instance Ord Value where
-    (Int a) <= (Int b) = a <= b
+    (Int a)     <= (Int b)     = a  <= b
     (String s1) <= (String s2) = s1 <= s2
-    (Bool a) <= (Bool b) = a <= b
+    (Bool a)    <= (Bool b)    = a  <= b
 
-lib_file = "reflib_file"
-lib_module = "reflib_module"
-lib_function = "reflib_function"
-lib_record = "reflib_record"
+lib_file        :: String
+lib_module      :: String
+lib_function    :: String            
+lib_record      :: String
+lib_recordfield :: String
+lib_spec        :: String
+lib_type        :: String
+lib_typeExp     :: String
+lib_clause      :: String
+lib_form        :: String
+lib_expr        :: String
+lib_dynfun      :: String
+lib_args        :: String
+lib_haskell     :: String
+dataflow        :: String
+query_lib       :: String
+metrics         :: String
+syntax          :: String
+               
+lib_file        = "reflib_file"
+lib_module      = "reflib_module"
+lib_function    = "reflib_function"
+lib_record      = "reflib_record"
 lib_recordfield = "reflib_record_field"
-lib_spec   = "reflib_spec"
-lib_type   = "reflib_type"
-lib_typeExp = "reflib_typexp"
-lib_clause = "reflib_clause"
-lib_form  = "reflib_form"
-lib_expr = "reflib_expression"
-lib_dynfun = "reflib_dynfun"
-lib_args = "reflib_args"
-lib_haskell = "reflib_haskell"
-dataflow  = "refanal_dataflow"
-query_lib = "reflib_query"
-metrics = "refusr_metrics"
-syntax  = "refcore_syntax"
+lib_spec        = "reflib_spec"
+lib_type        = "reflib_type"
+lib_typeExp     = "reflib_typexp"
+lib_clause      = "reflib_clause"
+lib_form        = "reflib_form"
+lib_expr        = "reflib_expression"
+lib_dynfun      = "reflib_dynfun"
+lib_args        = "reflib_args"
+lib_haskell     = "reflib_haskell"
+dataflow        = "refanal_dataflow"
+query_lib       = "reflib_query"
+metrics         = "refusr_metrics"
+syntax          = "refcore_syntax"
 
-filepath   = GPath lib_file
-modpath    = GPath lib_module
-funpath    = GPath lib_function
-clausepath = GPath lib_clause
-formpath   = GPath lib_form
-recpath    = GPath lib_record
+filepath     :: ErlFunction -> GraphPath
+modpath      :: ErlFunction -> GraphPath
+funpath      :: ErlFunction -> GraphPath
+clausepath   :: ErlFunction -> GraphPath
+formpath     :: ErlFunction -> GraphPath
+recpath      :: ErlFunction -> GraphPath
+recfieldpath :: ErlFunction -> GraphPath
+specpath     :: ErlFunction -> GraphPath
+dynfunpath   :: ErlFunction -> GraphPath
+                  
+filepath     = GPath lib_file
+modpath      = GPath lib_module
+funpath      = GPath lib_function
+clausepath   = GPath lib_clause
+formpath     = GPath lib_form
+recpath      = GPath lib_record
 recfieldpath = GPath lib_recordfield
-specpath   = GPath lib_spec
-dynfunpath = GPath lib_dynfun
+specpath     = GPath lib_spec
+dynfunpath   = GPath lib_dynfun
 
 type FilePosition = Int
 type File = String
@@ -93,9 +132,9 @@ getArg = do
          , erlPair (ErlAtom "file") file
          , erlPair (ErlAtom "position") pos
          ]
-
-erlPair :: (Erlang a, Erlang b) => a -> b -> ErlType
-erlPair a b = ErlTuple [toErlang a,toErlang b]
+    
+    erlPair :: (Erlang a, Erlang b) => a -> b -> ErlType
+    erlPair a b = ErlTuple [toErlang a,toErlang b]
 
 type ErlModule = String
 type ErlFunction = String
@@ -114,8 +153,8 @@ initErl name = do
   mbox <- createMBox self
   return $ database mbox
 
-referl :: String
-referl = "refactorerl"
+referl :: Node
+referl = Short "refactorerl"
 
 database :: MBox -> Database
 database mbox = Database { call = rpcCall mbox referl }
@@ -123,6 +162,9 @@ database mbox = Database { call = rpcCall mbox referl }
 type Env = [(Id, Value)]
 
 type Query a = StateT Env (ReaderT Database (ReaderT (Maybe Arg) (ErrorT String IO))) a
+
+runQuery :: Query a ->  Database -> Maybe Arg -> Env -> IO (Either String a)
+runQuery q db arg env = runErrorT (runReaderT (runReaderT (evalStateT q env) db) arg)
 
 eval :: UQuery -> Query Value
 eval (UQuery q) = eval q
@@ -205,6 +247,10 @@ eval (UAppExpr (URef f) arg) = do
     Just fundef -> evalApp fundef [arg']
     Nothing     -> g (section f) arg'
         where g f' a = evalApp f' [a]
+eval (UAppExpr f arg) = do
+    f' <- eval f
+    arg' <- eval arg
+    evalApp f' [arg']
 eval (UStringLit s) = string s
 eval (UNumLit i) = int $ i
 eval (UBoolLit b) = bool b
@@ -267,7 +313,7 @@ wrap f (ErlList xs) = return . Seq . map f $ xs
 wrap f x            = return . f $ x
 
 evalRel :: Value -> Id -> Value -> Bool
-evalRel a "=="  b = a == b
+evalRel a "==" b = a == b
 evalRel a "/=" b = a /= b
 evalRel a ">"  b = a >  b
 evalRel a ">=" b = a >= b
@@ -276,6 +322,7 @@ evalRel a "<=" b = a <= b
 evalRel a "=~" b = s =~ regex
     where String s     = a
           String regex = b
+evalRel _ s    _ = error ("evalRel: unknown relation: " ++ s)
                    
 makeFun :: UQuery -> Value -> Query [Value]
 makeFun (URef f) v = do Seq xs <- evalApp' f v
@@ -409,7 +456,7 @@ evalApp (Curried "loc" []) [arg]   = propertyDb Int metrics "metric" args
       (typeTag, x) = case arg of
                        Fun f  -> ("function",f)
                        File f -> ("file",f)                      
-evalApp (Curried "not" []) [Bool pred] = bool . not $ pred
+evalApp (Curried "not" []) [Bool p] = bool . not $ p
 evalApp (Curried "||" [Bool x]) [Bool y] = bool (x || y) 
 evalApp (Curried "null" []) [Seq xs] = bool . null $ xs
 evalApp (Curried "==" [x]) [y] = bool (x == y)
@@ -441,10 +488,10 @@ evalApp (Curried "module" []) [File f] = queryDb1 Mod (filepath "module") f
 evalApp (Curried "path" []) [File f] = propertyDb String lib_file "path" f
 evalApp (Curried "dir" []) [f] = do 
   String path <- evalApp' "path" f
-  return . String . takeDirectory $ path
+  string . takeDirectory $ path
 evalApp (Curried "filename" []) [f] = do
   String path <- evalApp' "path" f
-  return . String . takeFileName $ path
+  string . takeFileName $ path
 {-
 evalApp UTypeOf [arg] = 
     case arg of 
@@ -487,6 +534,14 @@ evalApp (Curried "length" []) [Chain c] = int . length . getChain $ c
 evalApp (Curried "distinct" []) [Chain c] = chain $ fChain nub c
 evalApp (Curried "distinct" []) [Seq xs] = seq $ nub xs
 evalApp (Curried "const" [a]) [_] = return a
+evalApp (Curried "groupBy" [f]) [Seq xs] = do
+  ys <- forM xs (\x -> evalApp f [x])
+  let zs = zip ys xs
+  return $ Grouped (group zs)
+    where 
+      group xs = map merge (groupBy criteria xs)
+      criteria = (==) `on` fst
+      merge xs = (fst . head $ xs, Seq (map snd xs))
 evalApp (Curried f args) [arg] = return $ Curried f (args ++ [arg])
 evalApp (FunDef argNames ps body) params =
     let (defined,argNames') = splitAt (length params) argNames
@@ -519,20 +574,44 @@ seq = return . Seq
 
 fChain :: ([a] -> [b]) -> Sq.Chain a -> Sq.Chain b
 fChain f (Sq.Incomplete xs) = Sq.Incomplete $ f xs
-fChain f (Sq.Complete xs)   = Sq.Complete $ f xs
-fChain f (Sq.Recursive xs)  = Sq.Recursive $ f xs
+fChain f (Sq.Complete xs)   = Sq.Complete   $ f xs
+fChain f (Sq.Recursive xs)  = Sq.Recursive  $ f xs
 
 getChain :: Sq.Chain a -> [a]
 getChain (Sq.Incomplete xs) = xs
 getChain (Sq.Complete xs)   = xs
 getChain (Sq.Recursive xs)  = xs
 
+flatten :: Value -> [Value] -> [Value]
+flatten (Seq xs@(Seq _:_)) ys = foldr flatten ys xs
+flatten (Seq xs)           ys = xs ++ ys
+flatten x                  ys = x : ys
+
 showValue' :: Value -> Query String
-showValue' (Seq fs@(Fun _:_)) = do
-  ErlList s <- callDb lib_haskell "name" [fs',tag]
-  return (concatMap (\ (ErlAtom a) -> a) s)
-    where fs' = ErlList $ map (\(Fun f) -> f) fs
-          tag = ErlAtom "function"
+showValue' (Seq []) = return ""
+showValue' (Seq xs@(Tuple _ _:_)) = showTuples xs
+showValue' (Seq xs@(x:_)) = do
+  ErlString s <- callDb lib_haskell "name" [xs',ErlAtom tag]
+  --  return . concatMap (\(ErlAtom x) -> x) $ s
+  return  s
+    where xs' = ErlList $ map f xs
+          (f,tag) = case x of
+                      File _ -> (\(File f) -> f,"file")
+                      Mod _  -> (\(Mod m)  -> m,"module")
+                      Fun _  -> (\(Fun f)  -> f,"function")
+                      Rec _  -> (\(Rec r)  -> r,"record")
+                      Type _ -> (\(Type t) -> t,"type")
+                      Expr _ -> (\(Expr e) -> e,"expression")
+showValue' (Grouped xs) = unlines <$> mapM showGroup xs
+    where showGroup (x,ys) = do
+            sx <- showValue' x
+            sys <- showValue' ys
+            return $ sx ++ '\n' : unlines ["  " ++ sy | sy <- words sys]
+showValue' (Bool b) = return . show $ b
+showValue' (Int n)  = return . show $ n
+showValue' (String s) = return s
+showValue' x        = showValue' (Seq [x])
+          
 
 showValue :: Value -> Query String
 showValue f@(File _)   = do
@@ -541,6 +620,7 @@ showValue f@(File _)   = do
 showValue m@(Mod _)    = do 
   String s <- evalApp' "name" m
   return s
+{-         
 showValue f@(Fun _)    = do 
   String name <- evalApp' "name" f
   Int arity <- evalApp' "arity" f
@@ -551,6 +631,12 @@ showValue f@(Fun _)    = do
                            String modname <- evalApp' "name" mod
                            return $ modname ++":"
   return $ prefix ++ name ++ "/" ++ show arity
+-}
+showValue (Fun f)    = do
+  ErlString name <- callDb lib_haskell "name" [ErlList [f],tag]
+  return name
+  where
+    tag = ErlAtom "function"
 showValue r@(Rec _)    = do
   String s <- evalApp' "name" r
   return s
@@ -597,7 +683,7 @@ showTuples ts@((Tuple components _):_) = do
 showTuples _ = throwError "showTuples: parameter is not tuple"
 
 showLine :: Value -> Query [String]
-showLine (Tuple _ xs) = mapM showValue xs
+showLine (Tuple _ xs) = mapM showValue' xs
 
 colWidth :: [[String]] -> [Int] -> [Int]
 colWidth [] widths        = widths

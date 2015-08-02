@@ -11,7 +11,7 @@ import Control.Monad.IO.Class (liftIO)
 import Prelude hiding (filter)
 import Data.Maybe (fromJust)
 
-import Types (Id, UQuery(..),UF(..),Binop(..))
+import Types (Id, UQuery(..),UF(..))
 
 -- | Convenience function for parsing queries.
 parseQuery :: String -> IO (Either ParseError UQuery)
@@ -83,7 +83,7 @@ groupby = do
   try $ reserved "groupBy"
   f <- identifier
   q <- set
-  return $ UGroupBy f q
+  return $ UAppExpr (UAppExpr (URef "groupBy") (URef f)) q
 
 query :: QParser UQuery
 query = do 
@@ -105,17 +105,17 @@ app = parens app
       <|>
       try (do f <- identifier
               args <- many1 (argument <|> parens argument)
-              return (UAppExpr f args))
+              return (foldl UAppExpr (URef f) args))
               <* whiteSpace
       <?> "function application"
-          where argument = numLit <|> stringLit <|> initial <|> parens (relation <|> composition <|> app) <|> ref <|> set
+           where argument = numLit <|> stringLit <|> initial <|> parens (relation <|> composition <|> app) <|> ref <|> set
 
 infixSetOp :: String -> QParser UQuery
 infixSetOp op = 
     do
       as <- try $ (set <|> initial <|> app <|> ref) <* reservedOp op
       bs <- set <|> initial <|> app
-      return $ UAppExpr op [as,bs]
+      return $ UAppExpr (UAppExpr (URef op) as) bs
     <|> parens (infixSetOp op)
 
 union :: QParser UQuery
@@ -180,7 +180,7 @@ filter :: QParser UQuery
 filter = do
   f <- relation <|> subset <|> element <|> app
   rest <- following
-  return (UBind (UGuard f) (UF "()" rest))
+  return (UGuard f rest)
 
 vline :: QParser String
 vline = symbol "|"
@@ -197,7 +197,7 @@ relation :: QParser UQuery
 relation = do rel <- try $ do 
                        a1 <- relOperand
                        rel <- relop
-                       return $ URelation rel a1
+                       return $ \op2 -> UAppExpr (UAppExpr (URef rel) a1) op2
               a2 <- relOperand
               return $ rel a2
            <?> "relation"
@@ -213,50 +213,50 @@ numLit = do
   n <- lexeme decimal
   return $ UNumLit (fromIntegral n)
 
-relop :: QParser Binop
+relop :: QParser String
 relop = (eq <|> neq <|> lte <|> lt <|> gte <|> gt <|> regexp) <* spaces
 
-eq :: QParser Binop
-eq = try (symbol "==") `as` Eq
+eq :: QParser String
+eq = try (symbol "==")
 
-neq :: QParser Binop
-neq = symbol "/=" `as` NEq
+neq :: QParser String
+neq = symbol "/="
 
-lt :: QParser Binop
-lt = symbol "<" `as` Lt
+lt :: QParser String
+lt = symbol "<" 
 
-lte :: QParser Binop
-lte = try (symbol "<=") `as` Lte
+lte :: QParser String
+lte = try (symbol "<=")
 
-gt :: QParser Binop
-gt = symbol ">" `as` Gt
+gt :: QParser String
+gt = symbol ">"
 
-gte :: QParser Binop
-gte = try (symbol ">=") `as` Gte
+gte :: QParser String
+gte = try (symbol ">=")
 
-regexp :: QParser Binop
-regexp = symbol "=~" `as` Regexp
+regexp :: QParser String
+regexp = symbol "=~"
 
 initial :: QParser UQuery
 initial = modules <|> files <|> atModule <|> atFile <|> atFunction <|> atExpression <?> "initial selector"
 
 atModule :: QParser UQuery
-atModule = reserved "atModule" *> return UAtModule
+atModule = reserved "atModule" *> return (URef "atModule")
 
 modules :: QParser UQuery
-modules = reserved "modules" *> return UModules
+modules = reserved "modules" *> return (URef "modules")
 
 files :: QParser UQuery
-files = reserved "files" *> return UFiles
+files = reserved "files" *> return (URef "files")
 
 atFile :: QParser UQuery
-atFile = reserved "atFile" *> return UAtFile
+atFile = reserved "atFile" *> return (URef "atFile")
 
 atFunction :: QParser UQuery
-atFunction = reserved "atFunction" *> return UAtFunction
+atFunction = reserved "atFunction" *> return (URef "atFunction")
 
 atExpression :: QParser UQuery
-atExpression = reserved "atExpression" *> return UAtExpr
+atExpression = reserved "atExpression" *> return (URef "atExpression")
          
 as :: QParser a -> b -> QParser b
 as p x = do { _ <- p; return x }
