@@ -43,14 +43,21 @@ data Value
     | Lambda Id UQuery
     | Curried Id [Value]
       deriving (Show,Eq)
-{-
+
 instance Erlang Value where
     toErlang = valueToErlang
-    fromErlang = valueFromErlang
+    fromErlang = erlangToValue
 
 valueToErlang :: Value -> ErlType
-valueToErlang = undefined
--}
+valueToErlang (File f)      = f
+valueToErlang (Mod m)      = m
+valueToErlang (Fun f)      = f
+valueToErlang (Rec r)      = r
+valueToErlang (Seq xs)     = toErlang xs
+valueToErlang (Grouped xs) = toErlang xs
+
+erlangToValue :: ErlType -> Value
+erlangToValue = undefined
 
 instance Ord Value where
     (Int a)     <= (Int b)     = a  <= b
@@ -483,7 +490,9 @@ evalApp (Curried "functions" []) [Mod m] = queryDb1 Fun (modpath "locals") m
 evalApp (Curried "records" []) [File f] = queryDb1 Rec (filepath "records") f
 evalApp (Curried "exported" []) [Fun f] = propertyDb Bool lib_function "is_exported" f
 evalApp (Curried "file" []) [Mod m] = queryDb1 File (modpath "file") m
-evalApp (Curried "defmodule" []) [Fun f] = queryDb1 Mod (funpath "module") f
+evalApp (Curried "defmodule" []) [Fun f] = do
+  Seq [m] <- queryDb1 Mod (funpath "module") f
+  return m
 evalApp (Curried "module" []) [File f] = queryDb1 Mod (filepath "module") f
 evalApp (Curried "path" []) [File f] = propertyDb String lib_file "path" f
 evalApp (Curried "dir" []) [f] = do 
@@ -539,9 +548,9 @@ evalApp (Curried "groupBy" [f]) [Seq xs] = do
   let zs = zip ys xs
   return $ Grouped (group zs)
     where 
-      group xs = map merge (groupBy criteria xs)
+      group ys = map merge (groupBy criteria ys)
       criteria = (==) `on` fst
-      merge xs = (fst . head $ xs, Seq (map snd xs))
+      merge ys = (fst . head $ ys, Seq (map snd ys))
 evalApp (Curried f args) [arg] = return $ Curried f (args ++ [arg])
 evalApp (FunDef argNames ps body) params =
     let (defined,argNames') = splitAt (length params) argNames
@@ -590,23 +599,14 @@ flatten x                  ys = x : ys
 showValue' :: Value -> Query String
 showValue' (Seq []) = return ""
 showValue' (Seq xs@(Tuple _ _:_)) = showTuples xs
-showValue' (Seq xs@(x:_)) = do
-  ErlString s <- callDb lib_haskell "name" [xs',ErlAtom tag]
-  --  return . concatMap (\(ErlAtom x) -> x) $ s
-  return  s
-    where xs' = ErlList $ map f xs
-          (f,tag) = case x of
-                      File _ -> (\(File f) -> f,"file")
-                      Mod _  -> (\(Mod m)  -> m,"module")
-                      Fun _  -> (\(Fun f)  -> f,"function")
-                      Rec _  -> (\(Rec r)  -> r,"record")
-                      Type _ -> (\(Type t) -> t,"type")
-                      Expr _ -> (\(Expr e) -> e,"expression")
-showValue' (Grouped xs) = unlines <$> mapM showGroup xs
-    where showGroup (x,ys) = do
-            sx <- showValue' x
-            sys <- showValue' ys
-            return $ sx ++ '\n' : unlines ["  " ++ sy | sy <- words sys]
+showValue' xs@(Seq _) = fromErlang <$> callDb lib_haskell "name" [xs']
+    where xs' = toErlang xs
+showValue' g@(Grouped _) = do
+  xs <- fromErlang <$> callDb lib_haskell "name" [g']
+  return . format $ xs
+    where g'  = toErlang g
+          format = foldr (\group acc -> formatGroup group ++ "\n" ++ acc) ""
+          formatGroup (grouping,names) = grouping ++ "\n" ++ unlines ["   " ++ name | name <- names]
 showValue' (Bool b) = return . show $ b
 showValue' (Int n)  = return . show $ n
 showValue' (String s) = return s
