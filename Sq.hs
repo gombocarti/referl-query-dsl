@@ -240,6 +240,7 @@ data ExprType
     | Implicit_fun
     | Fun_expr
     | Tuple
+    | Atom
     | List
     | Integer
     | Char
@@ -247,6 +248,7 @@ data ExprType
     | String
     | Variable
     | Cons
+    | Field_list
     | Record_expr
     | Record_update
     | Record_access
