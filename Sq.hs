@@ -237,6 +237,7 @@ data DbFunctionType = NonRecursive
                    
 data ExprType
     = Application
+    | Arglist
     | Implicit_fun
     | Fun_expr
     | Tuple
