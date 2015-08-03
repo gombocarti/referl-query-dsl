@@ -243,6 +243,9 @@ initial = modules <|> files <|> atModule <|> atFile <|> atFunction <|> atExpress
 atModule :: QParser UQuery
 atModule = reserved "atModule" *> return (URef "atModule")
 
+atField :: QParser UQuery
+atField = reserved "atField" *> return (URef "atField")
+
 modules :: QParser UQuery
 modules = reserved "modules" *> return (URef "modules")
 

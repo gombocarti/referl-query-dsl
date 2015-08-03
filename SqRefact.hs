@@ -246,6 +246,10 @@ eval (URef "atExpr") = do
   arg <- getArg
   e <- callDb' lib_args "expression" [arg] (throwError "atExpression: no expression at given position")
   return . Expr $ e
+eval (URef "atField") = do
+  arg <- getArg
+  f <- callDb' lib_args "record_field" [arg] (throwError "atField: no record field at given position")
+  return . RecField $ f
 eval (UTuple components) = do
   xs <- mapM eval components
   return $ Tuple components xs

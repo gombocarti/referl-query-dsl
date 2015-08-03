@@ -299,6 +299,7 @@ funtypes = relType ++
     , ("atModule", Mod)
     , ("atFunction", Fun)
     , ("atExpr", Expr)
+    , ("atField", RecordField)
     , ("functions", Mod :->: Set Fun)
     , ("name", Named a :=>: a :->: String)
     , ("arity", Fun :->: Int)
