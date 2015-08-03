@@ -4,7 +4,6 @@ module TypeCheck where
 
 import Data.Maybe (isJust)
 import Control.Monad.State
-import Control.Monad.Writer
 import Control.Monad.Error (throwError,catchError)
 import Control.Applicative ((<$>))
 import Text.Read (readMaybe)
@@ -322,6 +321,8 @@ funtypes = relType ++
     , ("type",  Typeable a :=>: a :->: Type)
     , ("exprType", Expr :->: ExprType)
     , ("expressions", MultiExpression a :=>: a :->: Set Expr)
+    , ("subexpressions", Expr :->: Set Expr)
+    , ("index", Expr :->: Int)
     , ("not", Bool :->: Bool)
     , ("~=", String :->: String :->: Bool)
     , ("||", Bool :->: Bool :->: Bool)

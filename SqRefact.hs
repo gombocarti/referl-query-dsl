@@ -49,7 +49,7 @@ instance Erlang Value where
     fromErlang = erlangToValue
 
 valueToErlang :: Value -> ErlType
-valueToErlang (File f)      = f
+valueToErlang (File f)     = f
 valueToErlang (Mod m)      = m
 valueToErlang (Fun f)      = f
 valueToErlang (Expr e)     = e
@@ -79,6 +79,7 @@ lib_expr        :: String
 lib_dynfun      :: String
 lib_args        :: String
 lib_haskell     :: String
+lib_sq          :: String
 dataflow        :: String
 query_lib       :: String
 metrics         :: String
@@ -98,6 +99,7 @@ lib_expr        = "reflib_expression"
 lib_dynfun      = "reflib_dynfun"
 lib_args        = "reflib_args"
 lib_haskell     = "reflib_haskell"
+lib_sq          = "refusr_sq_lib"
 dataflow        = "refanal_dataflow"
 query_lib       = "reflib_query"
 metrics         = "refusr_metrics"
@@ -538,8 +540,10 @@ evalApp (Curried "expressions" []) [Fun f] = queryDb1 Expr path f
                   , formpath "clauses"
                   , clausepath "exprs"
                   ]
-evalApp (Curried "expressions" []) [Expr e] = 
+evalApp (Curried "subexpressions" []) [Expr e] = 
     queryDb1' Expr lib_haskell "subexpressions" e
+evalApp (Curried "index" []) [Expr e] =
+    queryDb1' (Int . fromErlang) lib_sq "expr_index" e
 evalApp (Curried "max" []) [Seq xs] = seq . Sq.max $ xs
 evalApp (Curried "min" []) [Seq xs] = seq . Sq.min $ xs
 evalApp (Curried "average" []) [Seq xs] = seq . map Int . Sq.average $ ns
