@@ -236,18 +236,29 @@ data DbFunctionType = NonRecursive
                       deriving (Show,Eq,Read)
                    
 data ExprType
-    = FuncCall
-    | ImplicitFun
-    | Fun
+    = Application
+    | Implicit_fun
+    | Fun_expr
     | Tuple
     | List
-    | RecordExpr
-    | MatchExpr
+    | Integer
+    | Char
+    | Float
+    | String
+    | Variable
+    | Cons
+    | Record_expr
+    | Record_update
+    | Record_access
+    | Match_expr
+    | Infix_expr
     | Case
-    | If
-    | Receive   
-    | Try          -- ^ try ... end
-    | BlockExpr    -- ^ begin ... end
+    | If_expr
+    | Send_expr
+    | Receive_expr  
+    | Try_expr      -- ^ try ... end
+    | Catch_expr
+    | Block_expr    -- ^ begin ... end
       deriving (Show,Eq,Read)
 
 filename :: DbFile -> System.FilePath.FilePath
@@ -447,7 +458,7 @@ x = DV { vname = "X"
        , vbindings = []
        }
 
-bodya = DE { etype = FuncCall
+bodya = DE { etype = Application
            , ebody = "b(X + 2)."
            , efunction = a
            , evariables = [x]
@@ -474,7 +485,7 @@ b = DF { fname = "b"
        , floaded = True
        }
     where
-      body = DE { etype = FuncCall
+      body = DE { etype = Application
                 , ebody = "Z = 2," ++ 
                           "Z * Y."
                 , efunction = a
@@ -494,7 +505,7 @@ b = DF { fname = "b"
              , vbindings = [body]
              }
 
-nameDef = DE { etype = MatchExpr
+nameDef = DE { etype = Match_expr
              , ebody = "Name = \"Géza\""
              , efunction = f
              , evariables = [nameVar]
@@ -503,7 +514,7 @@ nameDef = DE { etype = MatchExpr
              , eexpressions = []
              }
 
-newrecord = DE { etype = RecordExpr
+newrecord = DE { etype = Record_expr
                , ebody = "#p{name = Name, age = Age}"
                , efunction = f
                , evariables = [nameVar, age]

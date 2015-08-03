@@ -14,7 +14,7 @@ import System.FilePath (takeFileName,takeDirectory)
 import Data.String.Utils (strip)
 import Sq (subset,Chain(..))
 
-import Data.Char (isPrint)
+import Data.Char (toUpper,toLower)
 
 import qualified Sq
 
@@ -56,6 +56,10 @@ valueToErlang (Expr e)     = e
 valueToErlang (Rec r)      = r
 valueToErlang (Seq xs)     = toErlang xs
 valueToErlang (Grouped xs) = toErlang xs
+valueToErlang (ExprType t) = ErlAtom . lowercase . show $ t
+    where lowercase (c:s) = toLower c : s
+          lowercase ""    = error "lowercase: empty string"
+valueToErlang v            = error ("valueToErlang: " ++ show v)
 
 erlangToValue :: ErlType -> Value
 erlangToValue = undefined
@@ -532,6 +536,8 @@ evalApp (Curried "origin" []) [Expr expr] = do
   wrap Expr es
     where args = [ErlList [expr], ErlList [ErlAtom "back"]]
 evalApp (Curried "fields" []) [Rec r] = queryDb1 RecField (recpath "fields") r
+evalApp (Curried "record" []) [RecField f] =
+    queryDb1 Rec (recfieldpath "recorddef") f
 evalApp (Curried "references" []) [Fun f] =
     queryDb1' Expr lib_haskell "function_references" f
 evalApp (Curried "references" []) [Rec f] = 
@@ -546,6 +552,12 @@ evalApp (Curried "expressions" []) [Fun f] = queryDb1 Expr path f
                   ]
 evalApp (Curried "subexpressions" []) [Expr e] = 
     queryDb1' Expr lib_haskell "subexpressions" e
+evalApp (Curried "exprType" []) [Expr e] =
+    queryDb1' (ExprType . read . capitalize . fromErlang) lib_expr "type" e
+    where capitalize (c:s) = toUpper c : s
+          capitalize ""    = error "capitalize: empty string"
+evalApp (Curried "exprValue" []) [Expr e] =
+    queryDb1' (String . fromErlang) lib_haskell "expr_value" e
 evalApp (Curried "index" []) [Expr e] =
     queryDb1' (Int . fromErlang) lib_sq "expr_index" e
 evalApp (Curried "max" []) [Seq xs] = seq . Sq.max $ xs
@@ -624,6 +636,7 @@ showValue' g@(Grouped _) = do
 showValue' (Bool b) = return . show $ b
 showValue' (Int n)  = return . show $ n
 showValue' (String s) = return s
+showValue' (ExprType et) = return . show $ et
 showValue' x        = showValue' (Seq [x])
           
 
