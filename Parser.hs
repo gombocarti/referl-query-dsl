@@ -2,6 +2,7 @@ module Parser where
 
 import Text.Parsec
 import Text.Parsec.Pos (initialPos)
+import Text.Parsec.Expr
 import qualified Text.Parsec.Token as T
 import qualified Text.Parsec.Language as L
 import Control.Applicative ((<*), (*>))
@@ -148,6 +149,25 @@ composition = do
   return $ UFunComp f rest
 -}
 
+term :: QParser UQuery
+term = parens expr <|> app <|> ref <|> numLit <|> stringLit <|> dataConst
+
+expr = buildExpressionParser table term
+
+table = 
+    [ [ binop ">" AssocRight, binop ">=" AssocRight
+      , binop "==" AssocRight, binop "/=" AssocRight
+      , binop "<" AssocRight, binop "<=" AssocRight
+      , binop "~=" AssocRight
+      ]
+    , [binop "||" AssocRight]
+    ]
+
+binop op assoc = Infix p assoc
+    where p = do 
+            reservedOp op
+            return (\x y -> UAppExpr (UAppExpr (URef op) x) y)
+
 composition :: QParser UQuery
 composition = do
   first <- try ((app <|> funref) <* ring)
@@ -178,7 +198,7 @@ following = do q <-  optionMaybe (comma *> compr_elem)
 
 filter :: QParser UQuery
 filter = do
-  f <- relation <|> subset <|> element <|> app
+  f <- expr <|> subset <|> element <|> app
   rest <- following
   return (UGuard f rest)
 
