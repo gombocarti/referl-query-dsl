@@ -182,7 +182,7 @@ runQuery q db arg env = runErrorT (runReaderT (runReaderT (evalStateT q env) db)
 
 eval :: UQuery -> Query Value
 eval (UQuery q) = eval q
-eval (UBind m (UF x body)) = do 
+eval (UBind m (UF x body)) = do
   Seq as <- eval m
   env <- get
   xs <- forM as (\a -> put ((x,a):env) >> eval body)
@@ -536,8 +536,9 @@ evalApp (Curried "origin" []) [Expr expr] = do
   wrap Expr es
     where args = [ErlList [expr], ErlList [ErlAtom "back"]]
 evalApp (Curried "fields" []) [Rec r] = queryDb1 RecField (recpath "fields") r
-evalApp (Curried "record" []) [RecField f] =
-    queryDb1 Rec (recfieldpath "recorddef") f
+evalApp (Curried "record" []) [RecField f] = do
+  Seq [record] <- queryDb1 Rec (recfieldpath "recorddef") f
+  return record
 evalApp (Curried "references" []) [Fun f] =
     queryDb1' Expr lib_haskell "function_references" f
 evalApp (Curried "references" []) [Rec f] = 
