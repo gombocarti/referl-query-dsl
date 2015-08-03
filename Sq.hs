@@ -250,6 +250,7 @@ data ExprType
     | Record_expr
     | Record_update
     | Record_access
+    | Record_field
     | Match_expr
     | Infix_expr
     | Case

@@ -59,6 +59,7 @@ valueToErlang (Grouped xs) = toErlang xs
 valueToErlang (ExprType t) = ErlAtom . lowercase . show $ t
     where lowercase (c:s) = toLower c : s
           lowercase ""    = error "lowercase: empty string"
+valueToErlang (RecField f) = f
 valueToErlang v            = error ("valueToErlang: " ++ show v)
 
 erlangToValue :: ErlType -> Value
@@ -130,9 +131,8 @@ specpath     = GPath lib_spec
 dynfunpath   = GPath lib_dynfun
 
 type FilePosition = Int
-type File = String
 
-type Arg = (File,FilePosition)
+type Arg = (FilePath,FilePosition)
 
 getArg :: Query ErlType
 getArg = do

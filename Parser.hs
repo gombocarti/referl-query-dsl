@@ -97,7 +97,7 @@ dataConst :: QParser UQuery
 dataConst = UDataConst <$> cons
     where cons = lexeme $ do 
                    c <- upper
-                   s <- many alphaNum
+                   s <- many (alphaNum <|> char '_')
                    return $ c:s
 
 app :: QParser UQuery
@@ -238,7 +238,7 @@ regexp :: QParser String
 regexp = symbol "=~"
 
 initial :: QParser UQuery
-initial = modules <|> files <|> atModule <|> atFile <|> atFunction <|> atExpression <?> "initial selector"
+initial = modules <|> files <|> atModule <|> atFile <|> atFunction <|> atExpression <|> atField <?> "initial selector"
 
 atModule :: QParser UQuery
 atModule = reserved "atModule" *> return (URef "atModule")
