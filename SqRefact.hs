@@ -305,15 +305,6 @@ queryDb f p = do
   x <- callDb query_lib "exec" [p']
   wrap f x
 
-evalPath :: GraphPath -> Query ErlType
-evalPath (GPath mod fun) = callDb mod fun []
-evalPath (GSeq xs) = do
-  ps <- mapM evalPath xs
-  callDb query_lib "seq" [ErlList ps]
-evalPath (All xs) = do
-  ps <- mapM evalPath xs
-  callDb query_lib "all" [ErlList ps]
-
 queryDb1 :: (ErlType -> Value) -> GraphPath -> ErlType -> Query Value
 queryDb1 f p x = do 
   p' <- evalPath p
@@ -329,6 +320,15 @@ propertyDb :: Erlang a => (a -> Value) -> ErlModule -> ErlFunction -> ErlType ->
 propertyDb f mod fun arg = do 
   x <- callDb mod fun [arg]
   return . f . fromErlang $ x
+
+evalPath :: GraphPath -> Query ErlType
+evalPath (GPath mod fun) = callDb mod fun []
+evalPath (GSeq xs) = do
+  ps <- mapM evalPath xs
+  callDb query_lib "seq" [ErlList ps]
+evalPath (All xs) = do
+  ps <- mapM evalPath xs
+  callDb query_lib "all" [ErlList ps]
 
 wrap :: (ErlType -> Value) -> ErlType -> Query Value
 wrap _f ErlNull     = return . Seq $ []
