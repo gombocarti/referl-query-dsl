@@ -11,6 +11,7 @@ import System.Directory (getHomeDirectory)
 import System.FilePath ((</>))
 import Control.Exception (try, SomeException)
 import Data.List (isPrefixOf)
+import System.IO (hPutStrLn,stderr)
 
 import Data.Time.Clock
 
@@ -31,15 +32,14 @@ run sq arg = do
     Left err -> putStrLn ("type error: " ++ err)
   -}     
 
-run :: String -> Maybe Arg -> IO ()
-run sq arg = do
+run ::  String -> Maybe Arg -> Database -> IO ()
+run sq arg db = do
   parseResult <- try (runParserT query Nothing "" sq)
   case parseResult of
     Right (Right tree) ->
         case runQCheck (check tree) funtypes of
           Right (q ::: _, _) -> 
               do
-                db <- initErl self
                 x <- runQuery (eval q >>= showValue') db arg initEnv
                 case x of
                   Right s  -> putStrLn s
@@ -48,6 +48,8 @@ run sq arg = do
     Right (Left perror) -> putStrLn ("parse error: " ++ show perror)
     Left exc -> putStrLn ("i/o error: " ++ show (exc :: SomeException))
     where initEnv = [(f,Curried f []) | (f,_) <- funtypes]
+
+
 
 {-
 runchk :: String -> QParser UQuery -> TEnv ->  Either String TUQuery
@@ -70,15 +72,18 @@ runmf' db = do
 
 main :: IO ()
 main = do
+  db <- initErl self
   a <- getArgs
   case a of
     []                   -> time runmf >>= print
-    [s]                  -> time (run s Nothing) >>= print
+    [s]  
+        | s == "benchmark" -> benchmark db
+        | otherwise -> time (run s Nothing db) >>= print
     [s,path,pos]
         | "~/" `isPrefixOf` path -> do 
            home <- getHomeDirectory
-           run s (Just (home </> path,read pos))
-        | otherwise            -> run s (Just (path,read pos))
+           run s (Just (home </> path,read pos)) db
+        | otherwise            -> run s (Just (path,read pos)) db
     _                    -> do 
            name <- getProgName 
            putStrLn ("usage: " ++ name ++ " query")
@@ -90,3 +95,14 @@ time m = do
   x <- m
   t2 <- getCurrentTime
   return (x,diffUTCTime t2 t1)
+
+
+queries :: [String]
+queries = ["{ref | ref <- references (record atField), not (null {e | e <- subexpressions ref, exprType e == Record_field, exprValue e == \"state\"}), exprType ref == Record_update}"
+          , "{ref | m <- modules, name m == \"korte\", f <- functions m, ref <- references f, not (null {s2 | s1 <- subexpressions ref, index s1 == 1, exprType s1 == Tuple, s2 <- subexpressions s1, index s2 == 1, exprValue s2 == \"1\"})}"
+          , "{ref | m <- modules, name m == \"korte\", f <- functions m, ref <- references f, not (null {s2 | s1 <- subexpressions ref, index s1 == 1 || index s1 == 2, exprType s1 == Tuple, s2 <- subexpressions s1, index s2 == 1, exprValue s2 == \"1\"})}"
+          , "{ref | m <- modules, name m == \"korte\", f <- functions m, ref <- references f, not (null {s | p1 <- exprParams ref, index p1 == 2, p2 <- exprParams p1, index p2 == 2, o <- origin p2, s <- subexpressions o, exprValue s == \"snmp\"}) }"]
+
+benchmark :: Database -> IO ()
+benchmark db = do x <- time $ mapM_ (\s -> Main.run s (Just ("/home/r2r/erlang/korte.erl",244)) db) queries
+                  print x
