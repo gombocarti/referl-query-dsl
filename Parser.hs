@@ -18,6 +18,9 @@ import Types (Id, UQuery(..),UF(..))
 parseQuery :: String -> IO (Either ParseError UQuery)
 parseQuery s = runParserT query Nothing "" s
 
+runParser :: QParser UQuery -> String -> IO (Either ParseError UQuery)
+runParser p s = runParserT p Nothing "" s
+
 --- Parsers:
 
 sqDef :: Monad m => L.GenLanguageDef String u m
@@ -43,7 +46,8 @@ lexer = T.makeTokenParser sqDef
 braces,lexeme,parens :: QParser a -> QParser a
 commaSep1 :: QParser a -> QParser [a]
 comma :: QParser String
-identifier,stringLiteral :: QParser String
+identifier :: QParser String
+stringLiteral :: QParser String
 symbol :: String -> QParser String
 reserved :: String -> QParser ()
 reservedOp :: String -> QParser ()
@@ -95,11 +99,11 @@ ref :: QParser UQuery
 ref = URef <$> try (name <* notFollowedBy (symbol "∘"))
 
 dataConst :: QParser UQuery
-dataConst = UDataConst <$> cons
-    where cons = lexeme $ do 
-                   c <- upper
-                   s <- many (alphaNum <|> char '_')
-                   return $ c:s
+dataConst = lexeme (do 
+              c <- upper
+              s <- many (alphaNum <|> char '_')
+              return (UDataConst (c:s)))
+            <?> "data constructor"
 
 app :: QParser UQuery
 app = parens app
