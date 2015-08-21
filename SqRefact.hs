@@ -158,7 +158,7 @@ data GraphPath = GPath ErlModule ErlFunction
                | All [GraphPath]
                  deriving Show
 
-data Database = Database 
+newtype Database = Database 
     { call :: ErlModule -> ErlFunction -> [ErlType] -> IO ErlType }
               
 initErl :: String -> IO Database
@@ -263,6 +263,11 @@ eval (UWith defs q) = addFuns >> eval q
     where
       addFuns = forM defs addFun
       addFun (UFunDef f args body _) = modify ((f,FunDef args [] body):)
+eval (UAppExpr (UAppExpr (UAppExpr (URef "iteration") n) fs) x) = do
+  Int n' <- eval n
+  x' <- eval x
+  Seq <$> iterationM n' f x'
+    where f      = makeFun fs
 eval (UAppExpr (URef f) arg) = do
   arg' <- eval arg
   v <- maybeReadVar f
@@ -559,6 +564,8 @@ evalApp (Curried "exprType" []) [Expr e] =
           capitalize ""    = error "capitalize: empty string"
 evalApp (Curried "exprValue" []) [Expr e] =
     queryDb1' (String . fromErlang) lib_haskell "expr_value" e
+evalApp (Curried "exprParams" []) [Expr e] =
+    queryDb1' Expr lib_sq "expr_param" e
 evalApp (Curried "index" []) [Expr e] =
     queryDb1' (Int . fromErlang) lib_sq "expr_index" e
 evalApp (Curried "max" []) [Seq xs] = seq . Sq.max $ xs

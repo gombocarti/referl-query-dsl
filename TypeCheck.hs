@@ -135,8 +135,8 @@ match x       y
     | otherwise   = []
 
 subs :: TEnv -> Typ -> Typ
-subs []      y = y
-subs [(v,x)] y = subs' y
+subs []        y = y
+subs ((v,x):_) y = subs' y
     where subs' (a :->: b) = subs' a :->: subs' b
           subs' (Set a)    = Set (subs' a)
           subs' (Chain a)  = Chain (subs' a)
@@ -324,6 +324,7 @@ funtypes = relType ++
     , ("exprValue", Expr :->: String)
     , ("expressions", MultiExpression a :=>: a :->: Set Expr)
     , ("subexpressions", Expr :->: Set Expr)
+    , ("exprParams", Expr :->: Set Expr)
     , ("index", Expr :->: Int)
     , ("not", Bool :->: Bool)
     , ("~=", String :->: String :->: Bool)
