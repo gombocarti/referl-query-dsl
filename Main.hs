@@ -41,9 +41,10 @@ run sq arg db = do
           Right (q ::: _, _) -> 
               do
                 x <- runQuery (eval q >>= showValue') db arg initEnv
-                case x of
-                  Right s  -> putStrLn s
-                  Left err -> putStrLn ("error: " ++ err)
+                putStrLn x
+--                case x of
+--                  Right s  -> putStrLn s
+--                  Left err -> putStrLn ("error: " ++ err)
           Left err -> putStrLn ("type error: " ++ err)
     Right (Left perror) -> putStrLn ("parse error: " ++ show perror)
     Left exc -> putStrLn ("i/o error: " ++ show (exc :: SomeException))
@@ -65,10 +66,12 @@ runmf = do
   --return res
   print res
 
+{-
 runmf' :: Database -> IO (Either String Value)
 runmf' db = do
   res <- runQuery (modsfuns) db Nothing []
   return res
+-}
 
 main :: IO ()
 main = do

@@ -7,7 +7,6 @@ import Data.List (union,nub,groupBy,intercalate,partition)
 import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
 import Control.Monad.State
-import Control.Monad.Error
 import Data.Functor ((<$>))
 import Data.Function (on)
 import System.FilePath (takeFileName,takeDirectory)
@@ -134,9 +133,12 @@ type FilePosition = Int
 
 type Arg = (FilePath,FilePosition)
 
+getArg' :: Query (Maybe Arg)
+getArg' = gets args
+    
 getArg :: Query ErlType
 getArg = do
-  arg <- lift . lift $ ask
+  arg <- getArg'
   case arg of 
     Just (file,pos) -> return $ refactArg file pos
     Nothing         -> throwError "no file and position are given"
@@ -165,28 +167,38 @@ initErl :: String -> IO Database
 initErl name = do 
   self <- createSelf name
   mbox <- createMBox self
-  return $ database mbox
+  return $ Database { call = rpcCall mbox referl }
+      where referl :: Node
+--            referl = Long "refactorerl" "192.168.0.17"
+            referl = Short "refactorerl"
 
-referl :: Node
-referl = Short "refactorerl"
-
-database :: MBox -> Database
-database mbox = Database { call = rpcCall mbox referl }
 
 type Env = [(Id, Value)]
 
-type Query a = StateT Env (ReaderT Database (ReaderT (Maybe Arg) (ErrorT String IO))) a
+data EvalState = EvalState
+    { env  :: Env
+    , db   :: Database
+    , args :: Maybe Arg
+    }
 
-runQuery :: Query a ->  Database -> Maybe Arg -> Env -> IO (Either String a)
-runQuery q db arg env = runErrorT (runReaderT (runReaderT (evalStateT q env) db) arg)
+type Query a = StateT EvalState IO a
 
+runQuery :: Query a ->  Database -> Maybe Arg -> Env -> IO a
+runQuery q db arg env = evalStateT q initState
+    where initState = EvalState env db arg
+
+putEnv :: Env -> Query ()
+putEnv newEnv = do
+  s <- get
+  put (s { env = newEnv })
+                      
 eval :: UQuery -> Query Value
 eval (UQuery q) = eval q
 eval (UBind m (UF x body)) = do
   Seq as <- eval m
-  env <- get
-  xs <- forM as (\a -> put ((x,a):env) >> eval body)
-  put env
+  env <- getEnv
+  xs <- forM as (\a -> putEnv ((x,a):env) >> eval body)
+  putEnv env
   return $ concatValue xs
 eval (UReturn x) = do
   y <- eval x
@@ -262,7 +274,7 @@ eval (ULambda x body) = return (Lambda x body)
 eval (UWith defs q) = addFuns >> eval q
     where
       addFuns = forM defs addFun
-      addFun (UFunDef f args body _) = modify ((f,FunDef args [] body):)
+      addFun (UFunDef f args body _) = modifyEnv ((f,FunDef args [] body):)
 eval (UAppExpr (UAppExpr (UAppExpr (URef "iteration") n) fs) x) = do
   Int n' <- eval n
   x' <- eval x
@@ -291,14 +303,17 @@ erlError :: ErlType -> Bool
 erlError (ErlTuple (ErlAtom x:_)) = x `elem` ["badrpc","reflib_error"]
 erlError _ = False
 
+getDb :: Query Database
+getDb = gets db
+             
 callDb :: ErlModule -> ErlFunction -> [ErlType] -> Query ErlType
 callDb mod fun args = do
-  db <- ask
+  db <- getDb
   liftIO $ call db mod fun args
 
 callDb' :: ErlModule -> ErlFunction -> [ErlType] -> Query ErlType -> Query ErlType
 callDb' mod fun args x = do
-  db <- ask
+  db <- getDb
   y <- liftIO $ call db mod fun args
   if erlError y
   then x
@@ -447,16 +462,18 @@ concatValueM m = do
 
 maybeReadVar :: Id  -> Query (Maybe Value)
 maybeReadVar v = do 
-  env <- get
+  env <- getEnv
   return $ lookup v env
 
 readVar :: Id -> Query Value
 readVar v = do
-  env <- get
+  env <- getEnv
   case lookup v env of
     Just val -> return val
     Nothing  -> throwError ("undefined variable: " ++ v)
 
+throwError = error
+                
 section :: Id -> Value
 section f = Curried f []
 
@@ -592,13 +609,21 @@ evalApp (FunDef argNames ps body) params =
     in
       case argNames' of
         [] -> do
-          env <- get
-          modify (defined' ++)
+          env <- getEnv
+          modifyEnv (defined' ++)
           result <- eval body
-          put env
+          putEnv env
           return result
         _  -> return (FunDef argNames' defined' body)
 evalApp _ _ = error "evalApp: not function"
+
+getEnv :: Query Env
+getEnv = gets env
+
+modifyEnv :: (Env -> Env) -> Query ()
+modifyEnv f = do
+  env <- getEnv
+  putEnv . f $ env
 
 string :: String -> Query Value
 string = return . String
