@@ -5,13 +5,11 @@ import TypeCheck
 --import qualified SqDeep as Sd
 import SqRefact
 -- import qualified Test
-import Text.Parsec (runParserT)
 import System.Environment (getArgs, getProgName)
 import System.Directory (getHomeDirectory)
 import System.FilePath ((</>))
 import Control.Exception (try, SomeException)
 import Data.List (isPrefixOf)
-import System.IO (hPutStrLn,stderr)
 
 import Data.Time.Clock
 
@@ -34,13 +32,13 @@ run sq arg = do
 
 run ::  String -> Maybe Arg -> Database -> IO ()
 run sq arg db = do
-  parseResult <- try (runParserT query Nothing "" sq)
+  parseResult <- try (parseQuery sq)
   case parseResult of
     Right (Right tree) ->
         case runQCheck (check tree) funtypes of
           Right (q ::: _, _) -> 
               do
-                x <- runQuery (eval q >>= showValue') db arg initEnv
+                x <- runEval (eval q >>= showValue') db arg initEnv
                 putStrLn x
 --                case x of
 --                  Right s  -> putStrLn s
@@ -48,9 +46,7 @@ run sq arg db = do
           Left err -> putStrLn ("type error: " ++ err)
     Right (Left perror) -> putStrLn ("parse error: " ++ show perror)
     Left exc -> putStrLn ("i/o error: " ++ show (exc :: SomeException))
-    where initEnv = [(f,Curried f []) | (f,_) <- funtypes]
-
-
+    where initEnv = [(f,curried f) | (f,_) <- funtypes]
 
 {-
 runchk :: String -> QParser UQuery -> TEnv ->  Either String TUQuery
@@ -58,14 +54,14 @@ runchk s parser env = case runParser parser Nothing "" s of
                         Right x -> check x env
                         Left err -> throwError . show $ err
 -}
-
+{-
 runmf :: IO ()
 runmf = do
   db <- initErl self
   res <- runQuery (modsfuns >>= (showValue' . Seq . (flip flatten []))) db Nothing []
   --return res
   print res
-
+-}
 {-
 runmf' :: Database -> IO (Either String Value)
 runmf' db = do
@@ -78,10 +74,10 @@ main = do
   db <- initErl self
   a <- getArgs
   case a of
-    []                   -> time runmf >>= print
+    []                   -> run modsfuns Nothing db
     [s]  
         | s == "benchmark" -> benchmark db
-        | otherwise -> time (run s Nothing db) >>= print
+        | otherwise -> (run s Nothing db) >>= print
     [s,path,pos]
         | "~/" `isPrefixOf` path -> do 
            home <- getHomeDirectory
@@ -90,6 +86,8 @@ main = do
     _                    -> do 
            name <- getProgName 
            putStrLn ("usage: " ++ name ++ " query")
+  where
+    modsfuns = "{f | m <- modules, f <- functions m}"
 
 
 time :: (IO a) -> IO (a,NominalDiffTime)

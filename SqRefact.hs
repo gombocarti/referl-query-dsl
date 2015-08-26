@@ -1,4 +1,12 @@
-module SqRefact where
+module SqRefact
+    (eval
+    ,runEval
+    ,showValue'
+    ,initErl
+    ,Database
+    ,Arg
+    ,curried)
+where
 
 import Prelude hiding (seq,mod)
 import Types (Id, UQuery(..), UF(..))
@@ -42,6 +50,9 @@ data Value
     | Lambda Id UQuery
     | Curried Id [Value]
       deriving (Show,Eq)
+
+curried :: Id -> Value
+curried f = Curried f []
 
 instance Erlang Value where
     toErlang = valueToErlang
@@ -133,10 +144,10 @@ type FilePosition = Int
 
 type Arg = (FilePath,FilePosition)
 
-getArg' :: Query (Maybe Arg)
+getArg' :: Eval (Maybe Arg)
 getArg' = gets args
     
-getArg :: Query ErlType
+getArg :: Eval ErlType
 getArg = do
   arg <- getArg'
   case arg of 
@@ -181,18 +192,18 @@ data EvalState = EvalState
     , args :: Maybe Arg
     }
 
-type Query a = StateT EvalState IO a
+type Eval a = StateT EvalState IO a
 
-runQuery :: Query a ->  Database -> Maybe Arg -> Env -> IO a
-runQuery q db arg env = evalStateT q initState
+runEval :: Eval a ->  Database -> Maybe Arg -> Env -> IO a
+runEval q db arg env = evalStateT q initState
     where initState = EvalState env db arg
 
-putEnv :: Env -> Query ()
+putEnv :: Env -> Eval ()
 putEnv newEnv = do
   s <- get
   put (s { env = newEnv })
                       
-eval :: UQuery -> Query Value
+eval :: UQuery -> Eval Value
 eval (UQuery q) = eval q
 eval (UBind m (UF x body)) = do
   Seq as <- eval m
@@ -284,13 +295,13 @@ eval (UAppExpr (URef f) arg) = do
   arg' <- eval arg
   v <- maybeReadVar f
   case v of
-    Just fundef -> evalApp fundef [arg']
+    Just fundef -> evalApp fundef arg'
     Nothing     -> g (section f) arg'
-        where g f' a = evalApp f' [a]
+        where g f' a = evalApp f' a
 eval (UAppExpr f arg) = do
     f' <- eval f
     arg' <- eval arg
-    evalApp f' [arg']
+    evalApp f' arg'
 eval (UStringLit s) = string s
 eval (UNumLit i) = int $ i
 eval (UBoolLit b) = bool b
@@ -303,15 +314,15 @@ erlError :: ErlType -> Bool
 erlError (ErlTuple (ErlAtom x:_)) = x `elem` ["badrpc","reflib_error"]
 erlError _ = False
 
-getDb :: Query Database
+getDb :: Eval Database
 getDb = gets db
              
-callDb :: ErlModule -> ErlFunction -> [ErlType] -> Query ErlType
+callDb :: ErlModule -> ErlFunction -> [ErlType] -> Eval ErlType
 callDb mod fun args = do
   db <- getDb
   liftIO $ call db mod fun args
 
-callDb' :: ErlModule -> ErlFunction -> [ErlType] -> Query ErlType -> Query ErlType
+callDb' :: ErlModule -> ErlFunction -> [ErlType] -> Eval ErlType -> Eval ErlType
 callDb' mod fun args x = do
   db <- getDb
   y <- liftIO $ call db mod fun args
@@ -319,29 +330,29 @@ callDb' mod fun args x = do
   then x
   else return y
 
-queryDb :: (ErlType -> Value) -> GraphPath -> Query Value
+queryDb :: (ErlType -> Value) -> GraphPath -> Eval Value
 queryDb f p = do
   p' <- evalPath p
   x <- callDb query_lib "exec" [p']
   wrap f x
 
-queryDb1 :: (ErlType -> Value) -> GraphPath -> ErlType -> Query Value
+queryDb1 :: (ErlType -> Value) -> GraphPath -> ErlType -> Eval Value
 queryDb1 f p x = do 
   p' <- evalPath p
   y <- callDb query_lib "exec" [x,p']
   wrap f y
 
-queryDb1' :: (ErlType -> Value) -> ErlModule-> ErlFunction -> ErlType -> Query Value
+queryDb1' :: (ErlType -> Value) -> ErlModule-> ErlFunction -> ErlType -> Eval Value
 queryDb1' f mod fun x = do
   y <- callDb mod fun [x]
   wrap f y
 
-propertyDb :: Erlang a => (a -> Value) -> ErlModule -> ErlFunction -> ErlType -> Query Value
+propertyDb :: Erlang a => (a -> Value) -> ErlModule -> ErlFunction -> ErlType -> Eval Value
 propertyDb f mod fun arg = do 
   x <- callDb mod fun [arg]
   return . f . fromErlang $ x
 
-evalPath :: GraphPath -> Query ErlType
+evalPath :: GraphPath -> Eval ErlType
 evalPath (GPath mod fun) = callDb mod fun []
 evalPath (GSeq xs) = do
   ps <- mapM evalPath xs
@@ -350,7 +361,7 @@ evalPath (All xs) = do
   ps <- mapM evalPath xs
   callDb query_lib "all" [ErlList ps]
 
-wrap :: (ErlType -> Value) -> ErlType -> Query Value
+wrap :: (ErlType -> Value) -> ErlType -> Eval Value
 wrap _f ErlNull     = return . Seq $ []
 wrap f (ErlList xs) = return . Seq . map f $ xs
 wrap f x            = return . f $ x
@@ -367,11 +378,11 @@ evalRel a "=~" b = s =~ regex
           String regex = b
 evalRel _ s    _ = error ("evalRel: unknown relation: " ++ s)
                    
-makeFun :: UQuery -> Value -> Query [Value]
+makeFun :: UQuery -> Value -> Eval [Value]
 makeFun (URef f) v = do Seq xs <- evalApp' f v
                         return xs
 makeFun app@(UAppExpr _ _) v = do f <- eval app
-                                  Seq xs <- evalApp f [v]
+                                  Seq xs <- evalApp f v
                                   return xs
 makeFun (UFunComp args) v = do Seq xs <- foldM step (Seq [v]) (reverse args)
                                return xs
@@ -379,16 +390,16 @@ makeFun (UFunComp args) v = do Seq xs <- foldM step (Seq [v]) (reverse args)
       step (Seq xs) (URef f) = concatValueM $ mapM (evalApp' f) xs
       step (Seq xs) app@(UAppExpr _ _) = do
         f <- eval app
-        xs' <- mapM (\x -> evalApp f [x]) xs
+        xs' <- mapM (evalApp f) xs
         return $ concatValue xs'
       step (Seq _) _ = error "step: not function argument"
       step _       _ = error "step: not sequence argument"
 makeFun _ _ = error "makeFun: not fuction argument"
 
-lfpM :: (Value -> Query [Value]) -> Value -> Query [Value]
+lfpM :: (Value -> Eval [Value]) -> Value -> Eval [Value]
 lfpM f x = loop [] [x]
     where 
-      loop :: [Value] -> [Value] -> Query [Value]
+      loop :: [Value] -> [Value] -> Eval [Value]
       loop old curr = do
         let all = union old curr
         new <- mapM f curr
@@ -397,7 +408,7 @@ lfpM f x = loop [] [x]
         then return all
         else loop all new'            
 
-closureNM :: Int -> (Value -> Query [Value]) -> Value -> Query [Value]
+closureNM :: Int -> (Value -> Eval [Value]) -> Value -> Eval [Value]
 closureNM n f x = loop n [x]
     where 
       loop 0 xs = return xs
@@ -405,14 +416,14 @@ closureNM n f x = loop n [x]
         xs' <- concat <$> mapM f xs
         loop (m - 1) (union xs xs')  -- foldM
 
-iterationM :: Int -> (Value -> Query [Value]) -> Value -> Query [Value]
+iterationM :: Int -> (Value -> Eval [Value]) -> Value -> Eval [Value]
 iterationM n f x = loop n [x]
     where loop 0 xs = return xs
           loop m xs = do
             xs' <- concat <$> mapM f xs
             loop (m - 1) xs'
 
-chainNM :: Int -> (Value -> Query [Value]) -> Value -> Query [Value]
+chainNM :: Int -> (Value -> Eval [Value]) -> Value -> Eval [Value]
 chainNM n f x = do chains <- loop n [] [Incomplete [x]]
                    return $ map Chain chains
     where loop 0 finished unfinished = return (unfinished ++ finished)
@@ -423,7 +434,7 @@ chainNM n f x = do chains <- loop n [] [Incomplete [x]]
             loop (m - 1) (finished' ++ finished) unfinished'
             
 
-chainInfM :: (Value -> Query [Value]) -> Value -> Query [Value]
+chainInfM :: (Value -> Eval [Value]) -> Value -> Eval [Value]
 chainInfM f x = do finished <- loop [] [Incomplete [x]]
                    return $ map Chain finished
     where loop finished []         = return finished
@@ -432,7 +443,7 @@ chainInfM f x = do finished <- loop [] [Incomplete [x]]
             let (unfinished', finished') = split new
             loop (finished' ++ finished) unfinished'
 
-cont :: Eq a => (a -> Query [a]) -> Chain a -> Query [Chain a]
+cont :: Eq a => (a -> Eval [a]) -> Chain a -> Eval [Chain a]
 cont f (Incomplete chain@(z:_)) = do
   xs <- f z
   case xs of
@@ -455,17 +466,17 @@ concatValue :: [Value] -> Value
 concatValue vals = Seq $ foldr step [] vals
     where step (Seq xs) acc = xs ++ acc
 
-concatValueM :: Query [Value] -> Query Value
+concatValueM :: Eval [Value] -> Eval Value
 concatValueM m = do
   xs <- m
   return $ concatValue xs
 
-maybeReadVar :: Id  -> Query (Maybe Value)
+maybeReadVar :: Id  -> Eval (Maybe Value)
 maybeReadVar v = do 
   env <- getEnv
   return $ lookup v env
 
-readVar :: Id -> Query Value
+readVar :: Id -> Eval Value
 readVar v = do
   env <- getEnv
   case lookup v env of
@@ -477,13 +488,13 @@ throwError = error
 section :: Id -> Value
 section f = Curried f []
 
-evalApp' :: Id -> Value -> Query Value
-evalApp' f arg = evalApp (section f) [arg]
+evalApp' :: Id -> Value -> Eval Value
+evalApp' f arg = evalApp (section f) arg
 
-evalApp :: Value -> [Value] -> Query Value
-evalApp (Curried f [p1]) [p2] | isRelation = bool (evalRel p1 f p2)
+evalApp :: Value -> Value -> Eval Value
+evalApp (Curried f [p1]) p2 | isRelation = bool (evalRel p1 f p2)
                               where isRelation = f `elem` ["==","<",">","/="]
-evalApp (Curried "name" []) [arg] = 
+evalApp (Curried "name" []) arg = 
     case arg of
       Fun f      -> propertyDb String lib_function "name" f
       Mod m      -> propertyDb String lib_module "name" m
@@ -492,120 +503,120 @@ evalApp (Curried "name" []) [arg] =
       TypeExpr t -> propertyDb String lib_typeExp "name" t
       Type t     -> propertyDb String lib_type "name" t
 -- TODO mit ad vissza a returntypes refactorerlben? (type vagy typeexpr?)
-evalApp (Curried "includes" []) [File f] =
+evalApp (Curried "includes" []) (File f) =
     queryDb1 File (filepath "includes") f
-evalApp (Curried "arity" []) [Fun f] = propertyDb Int lib_function "arity" f
-evalApp (Curried "loc" []) [arg]   = propertyDb Int metrics "metric" args
+evalApp (Curried "arity" []) (Fun f) = propertyDb Int lib_function "arity" f
+evalApp (Curried "loc" []) arg   = propertyDb Int metrics "metric" args
     where 
       args = ErlTuple [ErlAtom "line_of_code",ErlAtom typeTag,x]
       (typeTag, x) = case arg of
                        Fun f  -> ("function",f)
                        File f -> ("file",f)                      
-evalApp (Curried "not" []) [Bool p] = bool . not $ p
-evalApp (Curried "||" [Bool x]) [Bool y] = bool (x || y) 
-evalApp (Curried "null" []) [Seq xs] = bool . null $ xs
-evalApp (Curried "==" [x]) [y] = bool (x == y)
-evalApp (Curried "/=" [x]) [y] = bool (x /= y)
-evalApp (Curried ">" [x]) [y] = bool (x > y)
-evalApp (Curried ">=" [x]) [y] = bool (x >= y)
-evalApp (Curried "<" [x]) [y] = bool (x < y)
-evalApp (Curried "<=" [x]) [y] = bool (x <= y)
-evalApp (Curried "∈" [a]) [Seq bs] = bool $ a `elem` bs
-evalApp (Curried "⊂" [Seq as]) [Seq bs] = bool $ as `Sq.all_in` bs
-evalApp (Curried "any_in" [Seq as]) [Seq bs] = bool $ as `Sq.any_in` bs
-evalApp (Curried "∪" [Seq as]) [Seq bs] = seq $ as `union` bs
+evalApp (Curried "not" []) (Bool p) = bool . not $ p
+evalApp (Curried "||" [Bool x]) (Bool y) = bool (x || y) 
+evalApp (Curried "null" []) (Seq xs) = bool . null $ xs
+evalApp (Curried "==" [x]) y = bool (x == y)
+evalApp (Curried "/=" [x]) y = bool (x /= y)
+evalApp (Curried ">" [x]) y = bool (x > y)
+evalApp (Curried ">=" [x]) y = bool (x >= y)
+evalApp (Curried "<" [x]) y = bool (x < y)
+evalApp (Curried "<=" [x]) y = bool (x <= y)
+evalApp (Curried "∈" [a]) (Seq bs) = bool $ a `elem` bs
+evalApp (Curried "⊂" [Seq as]) (Seq bs) = bool $ as `Sq.all_in` bs
+evalApp (Curried "any_in" [Seq as]) (Seq bs) = bool $ as `Sq.any_in` bs
+evalApp (Curried "∪" [Seq as]) (Seq bs) = seq $ as `union` bs
 evalApp (Curried "calls" []) arg = evalApp (Curried "callsP" [p]) arg
     where p = (Curried "const" [Bool True])
-evalApp (Curried "callsP" [p]) [Fun f] = do 
+evalApp (Curried "callsP" [p]) (Fun f) = do 
   Seq funs <- queryDb1 Fun (funpath "funcalls") f
   funs' <- filterM pred funs
   seq funs'
     where 
-      pred :: Value -> Query Bool
-      pred fun = do Bool b <- evalApp p [fun]
+      pred :: Value -> Eval Bool
+      pred fun = do Bool b <- evalApp p fun
                     return b
-evalApp (Curried "functions" []) [Mod m] = queryDb1 Fun (modpath "locals") m
-evalApp (Curried "records" []) [File f] = queryDb1 Rec (filepath "records") f
-evalApp (Curried "exported" []) [Fun f] = propertyDb Bool lib_function "is_exported" f
-evalApp (Curried "file" []) [Mod m] = queryDb1 File (modpath "file") m
-evalApp (Curried "defmodule" []) [Fun f] = do
+evalApp (Curried "functions" []) (Mod m) = queryDb1 Fun (modpath "locals") m
+evalApp (Curried "records" []) (File f) = queryDb1 Rec (filepath "records") f
+evalApp (Curried "exported" []) (Fun f) = propertyDb Bool lib_function "is_exported" f
+evalApp (Curried "file" []) (Mod m) = queryDb1 File (modpath "file") m
+evalApp (Curried "defmodule" []) (Fun f) = do
   Seq [m] <- queryDb1 Mod (funpath "module") f
   return m
-evalApp (Curried "module" []) [File f] = queryDb1 Mod (filepath "module") f
-evalApp (Curried "path" []) [File f] = propertyDb String lib_file "path" f
-evalApp (Curried "dir" []) [f] = do 
+evalApp (Curried "module" []) (File f) = queryDb1 Mod (filepath "module") f
+evalApp (Curried "path" []) (File f) = propertyDb String lib_file "path" f
+evalApp (Curried "dir" []) (f) = do 
   String path <- evalApp' "path" f
   string . takeDirectory $ path
-evalApp (Curried "filename" []) [f] = do
+evalApp (Curried "filename" []) f = do
   String path <- evalApp' "path" f
   string . takeFileName $ path
 {-
-evalApp UTypeOf [arg] = 
+evalApp UTypeOf [arg) = 
     case arg of 
       FunParam p -> callDb' 
       RecField f -> queryDb1 f URecFieldTypeOf Type
 -}
--- evalApp UExprType [Expr e] = queryDb1 e UExprType ExprType
+-- evalApp UExprType [Expr e) = queryDb1 e UExprType ExprType
 
--- evalApp URecursivity [Fun f] = wrap . Sq.frecursive $ f
+-- evalApp URecursivity [Fun f) = wrap . Sq.frecursive $ f
 
-evalApp (Curried "returns" []) [Fun f] = queryDb1 Type path f
+evalApp (Curried "returns" []) (Fun f) = queryDb1 Type path f
     where path = GSeq [ funpath "spec"
                       , specpath "returntypes"
                       ] -- todo: typexp -> namedtype konverzio
-evalApp (Curried "origin" []) [Expr expr] = do
+evalApp (Curried "origin" []) (Expr expr) = do
   es <- callDb dataflow "reach" args
   wrap Expr es
     where args = [ErlList [expr], ErlList [ErlAtom "back"]]
-evalApp (Curried "fields" []) [Rec r] = queryDb1 RecField (recpath "fields") r
-evalApp (Curried "record" []) [RecField f] = do
+evalApp (Curried "fields" []) (Rec r) = queryDb1 RecField (recpath "fields") r
+evalApp (Curried "record" []) (RecField f) = do
   Seq [record] <- queryDb1 Rec (recfieldpath "recorddef") f
   return record
-evalApp (Curried "references" []) [Fun f] =
+evalApp (Curried "references" []) (Fun f) =
     queryDb1' Expr lib_haskell "function_references" f
-evalApp (Curried "references" []) [Rec f] = 
+evalApp (Curried "references" []) (Rec f) = 
     queryDb1 Expr (recpath "references") f
-evalApp (Curried "references" []) [RecField f] =
+evalApp (Curried "references" []) (RecField f) =
     queryDb1 Expr (recfieldpath "references") f
-evalApp (Curried "expressions" []) [Fun f] = queryDb1 Expr path f
+evalApp (Curried "expressions" []) (Fun f) = queryDb1 Expr path f
     where 
       path = GSeq [ funpath "definition"
                   , formpath "clauses"
                   , clausepath "exprs"
                   ]
-evalApp (Curried "subexpressions" []) [Expr e] = 
+evalApp (Curried "subexpressions" []) (Expr e) = 
     queryDb1' Expr lib_haskell "subexpressions" e
-evalApp (Curried "exprType" []) [Expr e] =
+evalApp (Curried "exprType" []) (Expr e) =
     queryDb1' (ExprType . read . capitalize . fromErlang) lib_expr "type" e
     where capitalize (c:s) = toUpper c : s
           capitalize ""    = error "capitalize: empty string"
-evalApp (Curried "exprValue" []) [Expr e] =
+evalApp (Curried "exprValue" []) (Expr e) =
     queryDb1' (String . fromErlang) lib_haskell "expr_value" e
-evalApp (Curried "exprParams" []) [Expr e] =
+evalApp (Curried "exprParams" []) (Expr e) =
     queryDb1' Expr lib_sq "expr_param" e
-evalApp (Curried "index" []) [Expr e] =
+evalApp (Curried "index" []) (Expr e) =
     queryDb1' (Int . fromErlang) lib_sq "expr_index" e
-evalApp (Curried "max" []) [Seq xs] = seq . Sq.max $ xs
-evalApp (Curried "min" []) [Seq xs] = seq . Sq.min $ xs
-evalApp (Curried "average" []) [Seq xs] = seq . map Int . Sq.average $ ns
+evalApp (Curried "max" []) (Seq xs) = seq . Sq.max $ xs
+evalApp (Curried "min" []) (Seq xs) = seq . Sq.min $ xs
+evalApp (Curried "average" []) (Seq xs) = seq . map Int . Sq.average $ ns
     where ns = [n | Int n <- xs]
 
-evalApp (Curried "length" []) [Chain c] = int . length . getChain $ c
-evalApp (Curried "distinct" []) [Chain c] = chain $ fChain nub c
-evalApp (Curried "distinct" []) [Seq xs] = seq $ nub xs
-evalApp (Curried "const" [a]) [_] = return a
-evalApp (Curried "groupBy" [f]) [Seq xs] = do
-  ys <- forM xs (\x -> evalApp f [x])
+evalApp (Curried "length" []) (Chain c) = int . length . getChain $ c
+evalApp (Curried "distinct" []) (Chain c) = chain $ fChain nub c
+evalApp (Curried "distinct" []) (Seq xs) = seq $ nub xs
+evalApp (Curried "const" [a]) (_) = return a
+evalApp (Curried "groupBy" [f]) (Seq xs) = do
+  ys <- forM xs (evalApp f)
   let zs = zip ys xs
   return $ Grouped (group zs)
     where 
       group ys = map merge (groupBy criteria ys)
       criteria = (==) `on` fst
       merge ys = (fst . head $ ys, Seq (map snd ys))
-evalApp (Curried f args) [arg] = return $ Curried f (args ++ [arg])
-evalApp (FunDef argNames ps body) params =
-    let (defined,argNames') = splitAt (length params) argNames
-        defined' = zip defined params ++ ps
+evalApp (Curried f args) arg = return $ Curried f (args ++ [arg])
+evalApp (FunDef argNames ps body) param =
+    let (defined:argNames') = argNames
+        defined' = (defined,param):ps
     in
       case argNames' of
         [] -> do
@@ -617,27 +628,27 @@ evalApp (FunDef argNames ps body) params =
         _  -> return (FunDef argNames' defined' body)
 evalApp _ _ = error "evalApp: not function"
 
-getEnv :: Query Env
+getEnv :: Eval Env
 getEnv = gets env
 
-modifyEnv :: (Env -> Env) -> Query ()
+modifyEnv :: (Env -> Env) -> Eval ()
 modifyEnv f = do
   env <- getEnv
   putEnv . f $ env
 
-string :: String -> Query Value
+string :: String -> Eval Value
 string = return . String
 
-int :: Int -> Query Value
+int :: Int -> Eval Value
 int = return . Int
 
-bool :: Bool -> Query Value
+bool :: Bool -> Eval Value
 bool = return . Bool
 
-chain :: Sq.Chain Value -> Query Value
+chain :: Sq.Chain Value -> Eval Value
 chain = return . Chain
 
-seq :: [Value] -> Query Value
+seq :: [Value] -> Eval Value
 seq = return . Seq
 
 fChain :: ([a] -> [b]) -> Sq.Chain a -> Sq.Chain b
@@ -655,7 +666,7 @@ flatten (Seq xs@(Seq _:_)) ys = foldr flatten ys xs
 flatten (Seq xs)           ys = xs ++ ys
 flatten x                  ys = x : ys
 
-showValue' :: Value -> Query String
+showValue' :: Value -> Eval String
 showValue' (Seq []) = return ""
 showValue' (Seq xs@(Tuple _ _:_)) = showTuples xs
 showValue' xs@(Seq _) = fromErlang <$> callDb lib_haskell "name" [xs']
@@ -673,7 +684,7 @@ showValue' (ExprType et) = return . show $ et
 showValue' x        = showValue' (Seq [x])
           
 
-showValue :: Value -> Query String
+showValue :: Value -> Eval String
 showValue f@(File _)   = do
   String name <- evalApp' "filename" f
   return name  
@@ -726,7 +737,7 @@ showValue (Chain (Recursive chain)) = do
   s <- mapM showValue (reverse chain)
   return $ unwords s ++ " *"
 
-showTuples :: [Value] -> Query String
+showTuples :: [Value] -> Eval String
 showTuples ts@((Tuple components _):_) = do
   let header = map show components
   lines <- mapM showLine ts
@@ -742,7 +753,7 @@ showTuples ts@((Tuple components _):_) = do
       padValue value width = fillLeft (width + 4) value
 showTuples _ = throwError "showTuples: parameter is not tuple"
 
-showLine :: Value -> Query [String]
+showLine :: Value -> Eval [String]
 showLine (Tuple _ xs) = mapM showValue' xs
 
 colWidth :: [[String]] -> [Int] -> [Int]
@@ -763,7 +774,7 @@ fillCenter n s = pad ++ s ++ pad
       padWidth = (n - length s) `div` 2
       pad      = replicate padWidth ' '
 
-modsfuns :: Query Value
+modsfuns :: Eval Value
 modsfuns = do
   Seq ms <- eval (URef "modules")
   fs <- forM ms (evalApp' "functions")

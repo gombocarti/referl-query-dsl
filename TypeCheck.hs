@@ -1,6 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-module TypeCheck where
+module TypeCheck
+    (runQCheck
+    ,funtypes
+    ,check)
+where
 
 import Data.Maybe (isJust)
 import Control.Monad.State

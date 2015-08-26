@@ -1,6 +1,6 @@
-module Parser where
+module Parser (parseQuery) where
 
-import Text.Parsec
+import Text.Parsec hiding (runParser)
 import Text.Parsec.Pos (initialPos)
 import Text.Parsec.Expr
 import qualified Text.Parsec.Token as T
@@ -12,7 +12,7 @@ import Control.Monad.IO.Class (liftIO)
 import Prelude hiding (filter)
 import Data.Maybe (fromJust)
 
-import Types (Id, UQuery(..),UF(..))
+import Types (UQuery(..),UF(..))
 
 -- | Convenience function for parsing queries.
 parseQuery :: String -> IO (Either ParseError UQuery)
@@ -156,17 +156,20 @@ composition = do
 term :: QParser UQuery
 term = parens expr <|> app <|> ref <|> numLit <|> stringLit <|> dataConst
 
+expr :: QParser UQuery
 expr = buildExpressionParser table term
 
+table :: [[Operator String (Maybe UQuery) IO UQuery]]
 table = 
-    [ [ binop ">" AssocRight, binop ">=" AssocRight
+    [ [ binop ">" AssocRight,  binop ">=" AssocRight
       , binop "==" AssocRight, binop "/=" AssocRight
-      , binop "<" AssocRight, binop "<=" AssocRight
+      , binop "<" AssocRight,  binop "<=" AssocRight
       , binop "~=" AssocRight
       ]
     , [binop "||" AssocRight]
     ]
 
+binop :: String -> Assoc -> Operator String (Maybe UQuery) IO UQuery
 binop op assoc = Infix p assoc
     where p = do 
             reservedOp op
