@@ -9,9 +9,9 @@ module SqRefact
 where
 
 import Prelude hiding (seq,mod)
-import Types (Id, UQuery(..), UF(..))
+import Types (Id,Query(..),LF(..),ExprType,FunctionType)
 import Foreign.Erlang
-import Data.List (union,nub,groupBy,intercalate,partition)
+import Data.List (union,nub,groupBy,intercalate,partition,intersect)
 import Text.Regex.Posix ((=~))
 import Control.Monad.Reader
 import Control.Monad.State
@@ -23,8 +23,6 @@ import Sq (subset,Chain(..))
 
 import Data.Char (toUpper,toLower)
 
-import qualified Sq
-
 data Value
     = File { getFile :: ErlType }
     | Mod ErlType
@@ -35,19 +33,19 @@ data Value
     | FunParam ErlType
     | Rec ErlType
     | RecField ErlType
-    | ExprType Sq.ExprType
-    | FunRecursivity Sq.DbFunctionType
+    | ExprType ExprType
+    | FunRecursivity FunctionType
     | String String
     | Int Int
     | Bool Bool
     | Unit
     | Path FilePath
-    | Chain (Sq.Chain Value)
+    | Chain (Chain Value)
     | Seq [Value]
     | Grouped [(Value,Value)]
-    | Tuple [UQuery] [Value]
-    | FunDef [Id] [(Id,Value)] UQuery
-    | Lambda Id UQuery
+    | Tuple [Query] [Value]
+    | FunDef [Id] [(Id,Value)] Query
+--    | Lambda Id Query
     | Curried Id [Value]
       deriving (Show,Eq)
 
@@ -203,21 +201,21 @@ putEnv newEnv = do
   s <- get
   put (s { env = newEnv })
                       
-eval :: UQuery -> Eval Value
-eval (UQuery q) = eval q
-eval (UBind m (UF x body)) = do
+eval :: Query -> Eval Value
+eval (Query q) = eval q
+eval (BindE m (Lambda x body)) = do
   Seq as <- eval m
   env <- getEnv
   xs <- forM as (\a -> putEnv ((x,a):env) >> eval body)
   putEnv env
   return $ concatValue xs
-eval (UReturn x) = do
+eval (ReturnE x) = do
   y <- eval x
   seq [y]
-eval (UGuard p rest) = do
+eval (GuardE p) = do
   Bool res <- eval p
   if res
-  then eval rest
+  then seq [Unit]
   else seq []
 {-eval (UGroupBy f q) = do
   Seq xs <- eval q
@@ -231,82 +229,79 @@ eval (UGuard p rest) = do
 -}
 --eval (UVarExpr v) env = readVar v env
 {-
-eval (UAppExpr "closureN" [n,fs,x]) = do
+eval (AppE "closureN" [n,fs,x]) = do
   Int n' <- eval n
   x' <- eval x
   Seq <$> closureNM n' f x'
     where f      = makeFun fs
-eval (UAppExpr "lfp" [fs,x]) = do
+eval (AppE "lfp" [fs,x]) = do
   x' <- eval x
   Seq <$> lfpM f x'
     where f = makeFun fs
-eval (UAppExpr "iteration" [n,fs,x]) = do
+eval (AppE "iteration" [n,fs,x]) = do
   Int n' <- eval n
   x' <- eval x
   Seq <$> iterationM n' f x'
     where f      = makeFun fs
-eval (UAppExpr "chainInf" [fs,x]) = do 
+eval (AppE "chainInf" [fs,x]) = do 
   x' <- eval x
   Seq <$> chainInfM f x'
     where f = makeFun fs
-eval (UAppExpr "chainN" [n,fs,x]) = do
+eval (AppE "chainN" [n,fs,x]) = do
   Int n' <- eval n
   x' <- eval x
   Seq <$> chainNM n' f x'
     where f = makeFun fs
 -}
-eval (URef "modules") = queryDb Mod (modpath "all")
-eval (URef "files") = queryDb File (filepath "all")
-eval (URef "atFunction") = do
+eval (RefE "modules") = queryDb Mod (modpath "all")
+eval (RefE "files") = queryDb File (filepath "all")
+eval (RefE "atFunction") = do
   arg <- getArg
   f <- callDb' lib_args "function" [arg] (throwError "atFunction: no function at given position")
   return . Fun $ f
-eval (URef "atFile") = do
+eval (RefE "atFile") = do
   arg <- getArg
   f <- callDb' lib_args "file" [arg] (throwError "atFile: no file at given position")
   return . File $ f
-eval (URef "atModule") = do
+eval (RefE "atModule") = do
   arg <- getArg
   m <- callDb' lib_args "module" [arg] (throwError "atModule: no module at given position")
   return . Mod $ m
-eval (URef "atExpr") = do
+eval (RefE "atExpr") = do
   arg <- getArg
   e <- callDb' lib_args "expression" [arg] (throwError "atExpression: no expression at given position")
   return . Expr $ e
-eval (URef "atField") = do
+eval (RefE "atField") = do
   arg <- getArg
   f <- callDb' lib_args "record_field" [arg] (throwError "atField: no record field at given position")
   return . RecField $ f
-eval (UTuple components) = do
+eval (TupleE components) = do
   xs <- mapM eval components
   return $ Tuple components xs
-eval (URef name) = readVar name
-eval (ULambda x body) = return (Lambda x body)
-eval (UWith defs q) = addFuns >> eval q
+eval (RefE name) = readVar name
+--eval (ULambda x body) = return (Lambda x body)
+eval (WithE defs q) = addFuns >> eval q
     where
       addFuns = forM defs addFun
-      addFun (UFunDef f args body _) = modifyEnv ((f,FunDef args [] body):)
-eval (UAppExpr (UAppExpr (UAppExpr (URef "iteration") n) fs) x) = do
+      addFun (FunDefE f args body _) = modifyEnv ((f,FunDef args [] body):)
+eval (AppE (AppE (AppE (RefE "iteration") n) fs) x) = do
   Int n' <- eval n
   x' <- eval x
   Seq <$> iterationM n' f x'
     where f      = makeFun fs
-eval (UAppExpr (URef f) arg) = do
+eval (AppE (RefE f) arg) = do
   arg' <- eval arg
-  v <- maybeReadVar f
-  case v of
-    Just fundef -> evalApp fundef arg'
-    Nothing     -> g (section f) arg'
-        where g f' a = evalApp f' a
-eval (UAppExpr f arg) = do
+  fun <- readVar f
+  evalApp fun arg'
+eval (AppE f arg) = do
     f' <- eval f
     arg' <- eval arg
     evalApp f' arg'
-eval (UStringLit s) = string s
-eval (UNumLit i) = int $ i
-eval (UBoolLit b) = bool b
-eval (UExprTypeLit t) = return $ ExprType t
-eval (UFunRecurLit fr) = return $ FunRecursivity fr
+eval (StringLitE s) = string s
+eval (NumLitE i) = int i
+eval (BoolLitE b) = bool b
+eval (ExprTypeLitE t) = return $ ExprType t
+eval (FunRecurLitE fr) = return $ FunRecursivity fr
 eval x = error (show x)
 
 -- noob
@@ -378,17 +373,17 @@ evalRel a "=~" b = s =~ regex
           String regex = b
 evalRel _ s    _ = error ("evalRel: unknown relation: " ++ s)
                    
-makeFun :: UQuery -> Value -> Eval [Value]
-makeFun (URef f) v = do Seq xs <- evalApp' f v
+makeFun :: Query -> Value -> Eval [Value]
+makeFun (RefE f) v = do Seq xs <- evalApp' f v
                         return xs
-makeFun app@(UAppExpr _ _) v = do f <- eval app
-                                  Seq xs <- evalApp f v
-                                  return xs
-makeFun (UFunComp args) v = do Seq xs <- foldM step (Seq [v]) (reverse args)
+makeFun app@(AppE _ _) v = do f <- eval app
+                              Seq xs <- evalApp f v
+                              return xs
+makeFun (FunCompE args) v = do Seq xs <- foldM step (Seq [v]) (reverse args)
                                return xs
     where 
-      step (Seq xs) (URef f) = concatValueM $ mapM (evalApp' f) xs
-      step (Seq xs) app@(UAppExpr _ _) = do
+      step (Seq xs) (RefE f) = concatValueM $ mapM (evalApp' f) xs
+      step (Seq xs) app@(AppE _ _) = do
         f <- eval app
         xs' <- mapM (evalApp f) xs
         return $ concatValue xs'
@@ -522,8 +517,8 @@ evalApp (Curried ">=" [x]) y = bool (x >= y)
 evalApp (Curried "<" [x]) y = bool (x < y)
 evalApp (Curried "<=" [x]) y = bool (x <= y)
 evalApp (Curried "∈" [a]) (Seq bs) = bool $ a `elem` bs
-evalApp (Curried "⊂" [Seq as]) (Seq bs) = bool $ as `Sq.all_in` bs
-evalApp (Curried "any_in" [Seq as]) (Seq bs) = bool $ as `Sq.any_in` bs
+evalApp (Curried "⊂" [Seq as]) (Seq bs) = bool $ as `all_in` bs
+evalApp (Curried "any_in" [Seq as]) (Seq bs) = bool $ as `any_in` bs
 evalApp (Curried "∪" [Seq as]) (Seq bs) = seq $ as `union` bs
 evalApp (Curried "calls" []) arg = evalApp (Curried "callsP" [p]) arg
     where p = (Curried "const" [Bool True])
@@ -596,9 +591,9 @@ evalApp (Curried "exprParams" []) (Expr e) =
     queryDb1' Expr lib_sq "expr_param" e
 evalApp (Curried "index" []) (Expr e) =
     queryDb1' (Int . fromErlang) lib_sq "expr_index" e
-evalApp (Curried "max" []) (Seq xs) = seq . Sq.max $ xs
-evalApp (Curried "min" []) (Seq xs) = seq . Sq.min $ xs
-evalApp (Curried "average" []) (Seq xs) = seq . map Int . Sq.average $ ns
+evalApp (Curried "max" []) (Seq xs) = seq [maximum xs]
+evalApp (Curried "min" []) (Seq xs) = seq [minimum xs]
+evalApp (Curried "average" []) (Seq xs) = seq . map Int . average $ ns
     where ns = [n | Int n <- xs]
 
 evalApp (Curried "length" []) (Chain c) = int . length . getChain $ c
@@ -776,6 +771,16 @@ fillCenter n s = pad ++ s ++ pad
 
 modsfuns :: Eval Value
 modsfuns = do
-  Seq ms <- eval (URef "modules")
+  Seq ms <- eval (RefE "modules")
   fs <- forM ms (evalApp' "functions")
   return $ concatValue fs
+
+any_in :: Eq a => [a] -> [a] -> Bool
+any_in xs ys = not (null (xs `intersect` ys))
+
+all_in :: Eq a => [a] -> [a] -> Bool
+all_in = subset
+
+average :: [Int] -> [Int]
+average [] = []
+average xs = [round $ (fromIntegral $ sum xs) / (fromIntegral $ length xs)]

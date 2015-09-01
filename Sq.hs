@@ -10,6 +10,7 @@ import qualified Text.Regex.Posix ((=~))
 import Data.Functor
 import Data.Function (on)
 import qualified System.FilePath(FilePath, takeFileName, takeBaseName, takeDirectory)
+import Types (FunctionType(..),ExprType(..))
 
 -- re-exported types and functions
 
@@ -171,7 +172,7 @@ returns = freturns
 exported :: DbFunction -> Bool
 exported = fexported
 
-recursivity :: DbFunction -> DbFunctionType
+recursivity :: DbFunction -> FunctionType
 recursivity = frecursive
 
 class MultiExpression a where
@@ -229,41 +230,6 @@ arity = length . parameters
 
 calls :: DbFunction -> [DbFunction]
 calls = fcalls
-
-data DbFunctionType = NonRecursive 
-                    | NonTailRecursive
-                    | TailRecursive
-                      deriving (Show,Eq,Read)
-                   
-data ExprType
-    = Application
-    | Arglist
-    | Implicit_fun
-    | Fun_expr
-    | Tuple
-    | Atom
-    | List
-    | Integer
-    | Char
-    | Float
-    | String
-    | Variable
-    | Cons
-    | Field_list
-    | Record_expr
-    | Record_update
-    | Record_access
-    | Record_field
-    | Match_expr
-    | Infix_expr
-    | Case
-    | If_expr
-    | Send_expr
-    | Receive_expr  
-    | Try_expr      -- ^ try ... end
-    | Catch_expr
-    | Block_expr    -- ^ begin ... end
-      deriving (Show,Eq,Read)
 
 filename :: DbFile -> System.FilePath.FilePath
 filename = System.FilePath.takeFileName . fpath
@@ -619,7 +585,7 @@ data DbFunction =
        , fexported :: Bool
        , fcalls :: [DbFunction]
        , floc :: [Int]
-       , frecursive :: DbFunctionType
+       , frecursive :: FunctionType
        , fbif :: Bool
        , fpure :: Bool
        , fspec :: [DbSpec]

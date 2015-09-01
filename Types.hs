@@ -1,72 +1,92 @@
-{-# LANGUAGE GADTs #-}
-module Types where
+module Types
+    (Id
+    ,Query(..)
+    ,QueryT(..)
+    ,LF(..)
+    ,Typ(..)
+    ,TypConstraint(..)
+    ,FunctionType(..)
+    ,ExprType(..))
+where
 import Data.List (intercalate)
 import Text.Parsec.Pos (SourcePos)
-
-import qualified Sq (ExprType, DbFunctionType)
 
 -- |Identifiers.
 type Id = String
 
-data TQuery a where
-    TAppExpr :: TQuery (a -> b) -> TQuery a -> TQuery b
-    TBind  :: TQuery [a] -> TF (a -> [b]) -> TQuery [b]
-    TReturn :: TQuery a -> TQuery [a]
-    TVarExpr :: Id -> TQuery a
-    TGuard :: TQuery Bool -> TQuery [()]
-    TStringLit ::  String -> TQuery String
-    TNumLit :: Int -> TQuery Int
-    TUnit :: TQuery ()
-
-data TF a where
-    TF :: TQuery a -> TQuery b -> TF (a -> b)
-
 -- |Untyped syntax tree type for queries.
-data UQuery
-    = UQuery UQuery  -- ^ Root of syntax tree
-    | UCompr UQuery [UQuery]
-    | UAppExpr UQuery UQuery
-    | UFunExpr Id
-    | UFunComp [UQuery]
-    | UBind UQuery UF
-    | UBind' Id UQuery
-    | UReturn UQuery
-    | UGuard UQuery UQuery
-    | ULambda Id UQuery
-    | UFunDef Id [Id] UQuery SourcePos
-    | UWith [UQuery] UQuery
-    | UTuple [UQuery]
-    | UVarExpr Id
---    | UFunRef Id
-    | URef Id
-    | UDataConst Id
-    | UStringLit String
-    | UNumLit Int
-    | UBoolLit Bool
-    | UExprTypeLit Sq.ExprType
-    | UFunRecurLit Sq.DbFunctionType
+data Query
+    = Query Query  -- ^ Root of syntax tree
+--    | Compr Query [Query]
+    | AppE Query Query
+--    | FunExpr Id
+    | FunCompE [Query]
+    | BindE Query LF
+--    | Bind' Id Query
+    | ReturnE Query
+    | GuardE Query
+--    | Lambda Id Query
+    | FunDefE Id [Id] Query SourcePos
+    | WithE [Query] Query
+    | TupleE [Query]
+--    | VarE Id
+--    | FunRef Id
+    | RefE Id
+    | DataConstE Id
+    | StringLitE String
+    | NumLitE Int
+    | BoolLitE Bool
+    | ExprTypeLitE ExprType
+    | FunRecurLitE FunctionType
 --     deriving (Eq)
       deriving (Eq,Show)
-data TUQuery = UQuery ::: Typ
+data QueryT = Query ::: Typ
 
 -- |Untyped function.
-data UF = UF Id UQuery
+data LF = Lambda Id Query
           deriving (Show,Eq)
-{-
-data Binop
-    = Eq
-    | NEq
-    | Lt
-    | Lte
-    | Gt
-    | Gte
-    | Regexp
-      deriving Eq
--}
+
+-- todo: külön (Types).RefactorErl modulba?
+data ExprType
+    = Application
+    | Arglist
+    | Implicit_fun
+    | Fun_expr
+    | Tuple
+    | Atom
+    | List
+    | Integer
+    | Char
+    | Float
+    | String
+    | Variable
+    | Cons
+    | Field_list
+    | Record_expr
+    | Record_update
+    | Record_access
+    | Record_field
+    | Match_expr
+    | Infix_expr
+    | Case
+    | If_expr
+    | Send_expr
+    | Receive_expr  
+    | Try_expr      -- ^ try ... end
+    | Catch_expr
+    | Block_expr    -- ^ begin ... end
+      deriving (Show,Eq,Read)
+
+data FunctionType
+    = NonRecursive 
+    | NonTailRecursive
+    | TailRecursive
+      deriving (Show,Eq,Read)
+
 -- |Types of the query language.
 data Typ
     = Set Typ
-    | Tuple [Typ]
+    | TupleT [Typ]
     | Chain Typ
     | Grouped Typ Typ
     | File
@@ -80,8 +100,8 @@ data Typ
     | SpecParam
     | FunParam
     | Type    -- ^ Sq.DbType
-    | ExprType
-    | String
+    | ExprTypeT
+    | StringT
     | Int
     | Bool
     | Unit
@@ -106,22 +126,11 @@ infixr 2 :->:
 infixr 1 :=>:
 
 -- Show instances.
-{-
-instance Show Binop where
-    show Eq     = "=="
-    show NEq    = "/="
-    show Lt     = "<"
-    show Lte    = "<="
-    show Gt     = ">"
-    show Gte    = ">="
-    show Regexp = "=~"
--}
-
 instance Show Typ where
     show (TypVar v)   = v
     show (Set t) = "{" ++ show t ++ "}"
     show (Chain t) = "Chain " ++ show t
-    show (Tuple components) = "(" ++ intercalate "," (map show components) ++ ")"
+    show (TupleT components) = "(" ++ intercalate "," (map show components) ++ ")"
     show (constr :=>: t) = show constr ++ " => " ++ show t
     show (f@(_ :->: _) :->: b) = "(" ++ show f ++ ") -> " ++ show b
     show (a :->: b) = show a ++ " -> " ++ show b
@@ -138,14 +147,14 @@ instance Show Typ where
     show Macro = "Macro"
     show SpecParam = "SpecParam"
     show (Grouped a b) = "Grouped " ++ show a ++ " " ++ show b
-    show ExprType = "ExprType"
-    show String = "String"
+    show ExprTypeT = "ExprType"
+    show StringT = "String"
     show Int = "Int"
     show Bool = "Bool"
     show Unit = "()"
     show FilePath = "FilePath"
 
-instance Show TUQuery where
+instance Show QueryT where
     show (q ::: t) = show q ++ " :: " ++ show t
 
 {-

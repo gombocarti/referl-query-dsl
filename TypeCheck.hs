@@ -46,76 +46,75 @@ runQCheck q ns = evalStateT (runStateT q ns) []
 type Namespace = [(Id, Typ)]
 
 -- |Type-checks and transforms untyped queries.
-check :: UQuery -> QCheck TUQuery
-check (UQuery q) = do
+check :: Query -> QCheck QueryT
+check (Query q) = do
   q' ::: t <- check q
-  return $ UQuery q' ::: t
-check (UBind m (UF x body)) = do
+  return $ Query q' ::: t
+check (BindE m (Lambda x body)) = do
   m' ::: tms <- check m
   expect (Set a) tms `catchError` addExpr m
   let Set tm = tms
   addVar x tm
   body' ::: Set tbody <- check body 
-  return $ UBind m' (UF x body') ::: Set tbody
+  return $ BindE m' (Lambda x body') ::: Set tbody
     where a = TypVar "a1"
-check (UReturn x) = do
+check (ReturnE x) = do
   x' ::: t <- check x
-  return (UReturn x' ::: Set t)
-check (UTuple xs) = do
+  return (ReturnE x' ::: Set t)
+check (TupleE xs) = do
   xs' <- mapM check xs
   let (ys,tys) = unzip [(y,ty) | y ::: ty <- xs']
-  return $ UTuple ys ::: Tuple tys
-check (UWith defs q) = do
+  return $ TupleE ys ::: TupleT tys
+check (WithE defs q) = do
   defs' <- mapM check defs
   let ds = [d | d ::: _ <- defs']
   q' ::: tq <- check q
-  return $ UWith ds q' ::: tq
-check (UFunDef f args body pos) = do
+  return $ WithE ds q' ::: tq
+check (FunDefE f args body pos) = do
   checkIsDefined f
   fundef ::: ftype <- checkFunDef f args body pos
   addVar f ftype
   return (fundef ::: ftype)
-check ref@(URef name) = do
+check ref@(RefE name) = do
   t <- getType name
   return (ref ::: t)
-check (UDataConst cons) =
+check (DataConstE cons) =
     case readMaybe cons of 
-      Just x -> return $ UExprTypeLit x ::: ExprType
+      Just x -> return $ ExprTypeLitE x ::: ExprTypeT
       Nothing -> do
         case readMaybe cons of
-          Just x -> return $ UFunRecurLit x ::: FunRecursivity
+          Just x -> return $ FunRecurLitE x ::: FunRecursivity
           Nothing -> throwError $ "unknown literal: " ++ cons
-check f@(ULambda x body) = do
-  _ ::: t <- checkFunDef "" [x] body (newPos "" 1 1)
-  return (f ::: t)
-check (UGuard p rest) = do
+--check f@(LambdaE x body) = do
+--  _ ::: t <- checkFunDef "" [x] body (newPos "" 1 1)
+--  return (f ::: t)
+check (GuardE p) = do
   p' ::: t <- check p
   expect Bool t
-  rest' ::: restT <- check rest
-  return (UGuard p' rest' ::: restT)
-check (UAppExpr f arg) = do
+  return (GuardE p' ::: Set Unit)
+check (AppE f arg) = do
   defining <- getFunDef
   when (recursive f defining) (throwError "recursion is not supported")
   f' ::: fType <- check f
   arg' ::: argt <- check arg
   (appT,_) <- checkApp fType argt
-  return $ (UAppExpr f' arg') ::: appT
-    where recursive (URef g) defining = g `elem` defining
+  return $ (AppE f' arg') ::: appT
+    where recursive (RefE g) defining = g `elem` defining
           recursive _        _        = False
-check (UFunComp args) = do
+check (FunCompE args) = do
   targs <- mapM check args
   let (args', types) = unzip [(arg, t) | arg ::: t <- targs]
       h:t = reverse types
   compType <- foldM step h t
-  return $ UFunComp args' ::: compType
+  return $ FunCompE args' ::: compType
     where
       step :: Typ -> Typ -> QCheck Typ
       step compType atype = fst <$> compose atype compType []
-check q@(UNumLit _) = return $ q ::: Int
-check q@(UStringLit _) = return $ q ::: String
-check q@(UBoolLit _) = return $ q ::: Bool
+check q@(NumLitE _) = return $ q ::: Int
+check q@(StringLitE _) = return $ q ::: StringT
+check q@(BoolLitE _) = return $ q ::: Bool
 
-addExpr :: UQuery -> String -> QCheck ()
+addExpr :: Query -> String -> QCheck ()
 addExpr q err = throwError (err ++ "\nin expression " ++ show q)
 
 -- |Checks the argument types.
@@ -153,7 +152,7 @@ checkIsDefined f = do
   when (isJust . lookup f $ namespace)
            (throwError ("function already defined: " ++ f))
 
-checkFunDef :: Id -> [Id] -> UQuery -> SourcePos -> QCheck TUQuery
+checkFunDef :: Id -> [Id] -> Query -> SourcePos -> QCheck QueryT
 checkFunDef f args body pos = do 
   namespace <- get
   zipWithM_ addArg args [1..]
@@ -163,7 +162,7 @@ checkFunDef f args body pos = do
   argTypes <- forM args getType
   let ftype = makeFunType argTypes bodyType
   put namespace
-  return $ UFunDef f args body' pos ::: ftype
+  return $ FunDefE f args body' pos ::: ftype
       where 
         addArg arg i     = addVar arg (TypVar ('t':show i))
         addLocation err  = throwError (err ++ "\nin function definition " ++ f ++ "\nin " ++ show pos)
@@ -186,7 +185,7 @@ makeFunType args bodyt = let (cs, ftype) = foldr step ([],bodyt) args
 type TEnv = [(Typ,Typ)]
 {-
 -- típuskikövetkeztetés
-typeCheck :: UQuery -> Typ -> Typ -> QCheck Typ
+typeCheck :: Query -> Typ -> Typ -> QCheck Typ
 typeCheck f t args = fst <$> tcheck t args [] 1
     where
       tcheck :: Typ -> [Typ] -> TEnv-> Int -> QCheck (Typ,TEnv)
@@ -305,7 +304,7 @@ funtypes = relType ++
     , ("atExpr", Expr)
     , ("atField", RecordField)
     , ("functions", Mod :->: Set Fun)
-    , ("name", Named a :=>: a :->: String)
+    , ("name", Named a :=>: a :->: StringT)
     , ("arity", Fun :->: Int)
     , ("loc", MultiLine a :=>: a :->: Set Int)
     , ("null", Set a :->: Bool)
@@ -324,14 +323,14 @@ funtypes = relType ++
     , ("returns", Fun :->: Set Type)
     , ("parameters",Fun :->: Set FunParam)
     , ("type",  Typeable a :=>: a :->: Type)
-    , ("exprType", Expr :->: ExprType)
-    , ("exprValue", Expr :->: String)
+    , ("exprType", Expr :->: ExprTypeT)
+    , ("exprValue", Expr :->: StringT)
     , ("expressions", MultiExpression a :=>: a :->: Set Expr)
     , ("subexpressions", Expr :->: Set Expr)
     , ("exprParams", Expr :->: Set Expr)
     , ("index", Expr :->: Int)
     , ("not", Bool :->: Bool)
-    , ("~=", String :->: String :->: Bool)
+    , ("~=", StringT :->: StringT :->: Bool)
     , ("||", Bool :->: Bool :->: Bool)
     , ("∪", Set a :->: Set a :->: Set a)
     , ("∈", a :->: Set a :->: Bool)
@@ -401,7 +400,7 @@ multiexpr t | t `elem` [Fun,Expr] = return ()
 
 ord :: Typ -> QCheck ()
 ord (TypVar _) = return ()
-ord t | t `elem` [Int,String,Bool] = return ()
+ord t | t `elem` [Int,StringT,Bool] = return ()
       | otherwise = throwError $ "can't be ordered: " ++ show t
 
 type TypEnv = [(Typ,Typ)]
