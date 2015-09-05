@@ -206,7 +206,8 @@ following = do q <-  optionMaybe (comma *> compr_elem)
 filter :: QParser Query
 filter = do
   f <- expr <|> subset <|> element <|> app
-  return (GuardE f)
+  rest <- following
+  return (BindE (GuardE f) (Lambda "_" rest))
 
 vline :: QParser String
 vline = symbol "|"
