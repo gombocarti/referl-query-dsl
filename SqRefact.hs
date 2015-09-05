@@ -670,7 +670,11 @@ showValue' g@(Grouped _) = do
   xs <- fromErlang <$> callDb lib_haskell "name" [g']
   return . format $ xs
     where g'  = toErlang g
+
+          format :: [(String,[String])] -> String
           format = foldr (\group acc -> formatGroup group ++ "\n" ++ acc) ""
+
+          formatGroup :: (String,[String]) -> String
           formatGroup (grouping,names) = grouping ++ "\n" ++ unlines ["   " ++ name | name <- names]
 showValue' (Bool b) = return . show $ b
 showValue' (Int n)  = return . show $ n
