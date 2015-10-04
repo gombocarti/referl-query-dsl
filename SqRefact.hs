@@ -55,7 +55,10 @@ data Value
 
 instance Eq Value where
     (Mod a) == (Mod b) = a == b
+    (Fun a) == (Fun b) = a == b
+    (String a) == (String b) = a == b
     (Int a) == (Int b) = a == b
+    (Bool a) == (Bool b) = a == b
 
 instance Show Value where
     show (Mod m) = "Mod " ++ show m
