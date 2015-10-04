@@ -23,6 +23,9 @@ import Sq (subset,Chain(..))
 
 import Data.Char (toUpper,toLower)
 
+import Pipes
+import qualified Pipes.Prelude as Pr
+
 data Value
     = File { getFile :: ErlType }
     | Mod ErlType
@@ -42,12 +45,21 @@ data Value
     | Path FilePath
     | Chain (Chain Value)
     | Seq [Value]
+    | SeqP (Producer Value (StateT EvalState IO) ())
     | Grouped [(Value,Value)]
     | Tuple [Query] [Value]
     | FunDef [Id] [(Id,Value)] Query
 --    | Lambda Id Query
     | Curried Id [Value]
-      deriving (Show,Eq)
+--      deriving (Show,Eq)
+
+instance Eq Value where
+    (Mod a) == (Mod b) = a == b
+    (Int a) == (Int b) = a == b
+
+instance Show Value where
+    show (Mod m) = "Mod " ++ show m
+    show (Fun f) = "Fun " ++ show f
 
 curried :: Id -> Value
 curried f = Curried f []
@@ -68,7 +80,7 @@ valueToErlang (ExprType t) = ErlAtom . lowercase . show $ t
     where lowercase (c:s) = toLower c : s
           lowercase ""    = error "lowercase: empty string"
 valueToErlang (RecField f) = f
-valueToErlang v            = error ("valueToErlang: " ++ show v)
+--valueToErlang v            = error ("valueToErlang: " ++ show v)
 
 erlangToValue :: ErlType -> Value
 erlangToValue = undefined
@@ -206,9 +218,15 @@ eval (Query q) = eval q
 eval (BindE m (Lambda x body)) = do
   Seq as <- eval m
   env <- getEnv
-  xs <- forM as (\a -> putEnv ((x,a):env) >> eval body)
-  putEnv env
-  return $ concatValue xs
+  (return . SeqP) (for (each as) (f env))
+      where 
+        f env = (\a -> do
+                   lift (putEnv ((x,a):env))
+                   xs <- lift (eval body)
+                   case xs of
+                     Seq ys -> each ys
+                     SeqP ys -> ys
+                )
 eval (ReturnE x) = do
   y <- eval x
   seq [y]
@@ -509,6 +527,7 @@ evalApp (Curried "loc" []) arg   = propertyDb Int metrics "metric" args
                        File f -> ("file",f)                      
 evalApp (Curried "not" []) (Bool p) = bool . not $ p
 evalApp (Curried "||" [Bool x]) (Bool y) = bool (x || y) 
+evalApp (Curried "null" []) (SeqP xs) = Bool <$> Pr.null xs
 evalApp (Curried "null" []) (Seq xs) = bool . null $ xs
 evalApp (Curried "==" [x]) y = bool (x == y)
 evalApp (Curried "/=" [x]) y = bool (x /= y)
@@ -662,6 +681,7 @@ flatten (Seq xs)           ys = xs ++ ys
 flatten x                  ys = x : ys
 
 showValue' :: Value -> Eval String
+showValue' (SeqP xs) = Pr.toListM xs >>= showValue' . Seq
 showValue' (Seq []) = return ""
 showValue' (Seq xs@(Tuple _ _:_)) = showTuples xs
 showValue' xs@(Seq _) = fromErlang <$> callDb lib_haskell "name" [xs']
