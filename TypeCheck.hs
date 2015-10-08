@@ -315,7 +315,7 @@ funtypes = relType ++
     , ("filename", File :->: FilePath)
     , ("file",  Mod :->: Set File)
     , ("module", File :->: Set Mod)
-    , ("defmodule", Fun :->: Set Mod)
+    , ("defmodule", Fun :->: Mod)
     , ("records",  File :->: Set Record)
     , ("exported", Fun :->: Bool)
     , ("recursivity",  Fun :->: FunRecursivity)
