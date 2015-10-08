@@ -45,7 +45,7 @@ data Value
     | Path FilePath
     | Chain (Chain Value)
     | Seq [Value]
-    | SeqP (Producer Value (StateT EvalState IO) ())
+    | SeqP (ListT (StateT EvalState IO) Value)
     | Grouped [(Value,Value)]
     | Tuple [Query] [Value]
     | FunDef [Id] [(Id,Value)] Query
@@ -221,15 +221,16 @@ eval (Query q) = eval q
 eval (BindE m (Lambda x body)) = do
   Seq as <- eval m
   env <- getEnv
-  (return . SeqP) (for (each as) (f env))
-      where 
-        f env = (\a -> do
-                   lift (putEnv ((x,a):env))
-                   xs <- lift (eval body)
-                   case xs of
-                     Seq ys -> each ys
-                     SeqP ys -> ys
-                )
+  (return . SeqP) (Select (each as) >>= (f env))
+      where
+        f :: Env -> Value -> ListT (StateT EvalState IO) Value
+        f env a = do
+          lift (putEnv ((x,a):env))
+          xs <- lift (eval body)
+          case xs of
+            Seq ys -> Select (each ys)
+            SeqP ys -> ys
+
 eval (ReturnE x) = do
   y <- eval x
   seq [y]
@@ -530,7 +531,7 @@ evalApp (Curried "loc" []) arg   = propertyDb Int metrics "metric" args
                        File f -> ("file",f)                      
 evalApp (Curried "not" []) (Bool p) = bool . not $ p
 evalApp (Curried "||" [Bool x]) (Bool y) = bool (x || y) 
-evalApp (Curried "null" []) (SeqP xs) = Bool <$> Pr.null xs
+evalApp (Curried "null" []) (SeqP xs) = Bool <$> Pr.null (enumerate xs)
 evalApp (Curried "null" []) (Seq xs) = bool . null $ xs
 evalApp (Curried "==" [x]) y = bool (x == y)
 evalApp (Curried "/=" [x]) y = bool (x /= y)
@@ -684,7 +685,7 @@ flatten (Seq xs)           ys = xs ++ ys
 flatten x                  ys = x : ys
 
 showValue' :: Value -> Eval String
-showValue' (SeqP xs) = Pr.toListM xs >>= showValue' . Seq
+showValue' (SeqP xs) = Pr.toListM (every xs) >>= showValue' . Seq
 showValue' (Seq []) = return ""
 showValue' (Seq xs@(Tuple _ _:_)) = showTuples xs
 showValue' xs@(Seq _) = fromErlang <$> callDb lib_haskell "name" [xs']
