@@ -48,7 +48,7 @@ closureN :: Int -> (a -> [a]) -> a -> [a]
 closureN n f x = concat . take n . iterate (concatMap f) $ [x]
 
 lfp :: Eq a => (a -> [a]) -> a -> [a]
-lfp f xs = loop [] [xs]
+lfp f x = loop [] [x]
     where loop old curr = let old' = old `u` curr
                               new = concatMap f curr in
                            if new `subset` old'
