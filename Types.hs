@@ -75,6 +75,7 @@ data ExprType
     | Try_expr      -- ^ try ... end
     | Catch_expr
     | Block_expr    -- ^ begin ... end
+    | Parenthesis
       deriving (Show,Eq,Read)
 
 data FunctionType

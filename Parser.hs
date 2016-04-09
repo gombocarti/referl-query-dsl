@@ -100,18 +100,19 @@ ref = RefE <$> try (name <* notFollowedBy (symbol "∘"))
 
 dataConst :: QParser Query
 dataConst = lexeme (do 
-              c <- upper
-              s <- many (alphaNum <|> char '_')
-              return (DataConstE (c:s)))
-            <?> "data constructor"
+    c <- upper
+    s <- many (alphaNum <|> char '_')
+    return (DataConstE (c:s)))
+    <?> "data constructor"
 
 app :: QParser Query
 app = parens app
       <|>
-      try (do f <- identifier
-              args <- many1 (argument <|> parens argument)
-              return (foldl AppE (RefE f) args))
-              <* whiteSpace
+      try (do
+        f <- identifier
+        args <- many1 (argument <|> parens argument)
+        return (foldl AppE (RefE f) args))
+        <* whiteSpace
       <?> "function application"
            where argument = numLit <|> stringLit <|> initial <|> parens (relation <|> composition <|> app) <|> ref <|> set
 

@@ -59,6 +59,7 @@ instance Eq Value where
     (String a) == (String b) = a == b
     (Int a) == (Int b) = a == b
     (Bool a) == (Bool b) = a == b
+    (ExprType a) == (ExprType b) = a == b
 
 instance Show Value where
     show (Mod m) = "Mod " ++ show m
@@ -516,6 +517,7 @@ evalApp (Curried "name" []) arg =
       Fun f      -> propertyDb String lib_function "name" f
       Mod m      -> propertyDb String lib_module "name" m
       File _     -> evalApp' "filename" arg
+      RecField f -> propertyDb String lib_recordfield "name" f
       Rec r      -> propertyDb String lib_record "name" r
       TypeExpr t -> propertyDb String lib_typeExp "name" t
       Type t     -> propertyDb String lib_type "name" t
